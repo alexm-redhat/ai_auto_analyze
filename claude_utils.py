@@ -1,0 +1,168 @@
+from colorama import Fore, Style
+
+from claude_agent_sdk import (
+    AssistantMessage,
+    TextBlock,
+    ThinkingBlock,
+    ToolUseBlock,
+    ToolResultBlock,
+    ContentBlock,
+    ResultMessage,
+    SystemMessage,
+    UserMessage,
+    ClaudeAgentOptions,
+    ClaudeSDKClient,
+)
+
+from claude_agent_sdk.types import StreamEvent
+
+from configs import ClaudeConfig
+from analyze_prompts import system_prompt
+
+
+def print_dict(d, indent):
+    for key, val in d.items():
+        if isinstance(val, dict):
+            print("{}{} : ".format(indent, key))
+            print_dict(val, indent + "    ")
+        else:
+            print("{}{} : {}".format(indent, key, val))
+
+
+def print_ContentBlock(prefix, content):
+    if isinstance(content, TextBlock):
+        print("{} {}".format(prefix, content.text))
+
+    elif isinstance(content, ThinkingBlock):
+        print("{} Thinking: {} {}".format(prefix, content.signature, content.thinking))
+
+    elif isinstance(content, ToolUseBlock):
+        print(
+            "{} ToolUse: name = {}".format(
+                prefix,
+                content.name,
+            )
+        )
+
+        print_dict(content.input, indent="    ")
+
+    elif isinstance(content, ToolResultBlock):
+        print(
+            "{} ToolResult: err = {}".format(
+                prefix,
+                content.is_error,
+            )
+        )
+
+        print()
+        print(content.content)
+
+    else:
+        raise Exception("Unexpected type(content) = {}".format(type(content)))
+    print()
+
+
+def print_UserMessage(msg: UserMessage):
+    prefix = f"{Fore.GREEN}User:{Style.RESET_ALL}"
+    if isinstance(msg.content, str):
+        print("{} {}".format(prefix, msg.content))
+    else:
+        for block in msg.content:
+            assert isinstance(block, ContentBlock)
+            print_ContentBlock(prefix, block)
+
+
+def print_AssistantMessage(msg: AssistantMessage):
+    prefix = f"{Fore.CYAN}Claude:{Style.RESET_ALL}"
+
+    for block in msg.content:
+        assert isinstance(block, ContentBlock)
+        print_ContentBlock(prefix, block)
+
+    if msg.error is not None:
+        print("    -- ERROR = {}".format(msg.error))
+
+
+def print_SystemMessage(msg: SystemMessage):
+    print("System: subtype = {} data = {}".format(msg.subtype, msg.data))
+
+
+def print_ResultMessage(msg: ResultMessage):
+    print(
+        "Result: subtype = {} dur = {} dur_api = {} err = {} num_turns = {}".format(
+            msg.subtype,
+            msg.duration_ms,
+            msg.duration_api_ms,
+            msg.is_error,
+            msg.num_turns,
+        )
+    )
+
+    if msg.result is not None:
+        print("    -- result = {}".format(msg.result))
+
+
+def print_StreamEvent(msg: StreamEvent):
+    print("Stream: event = {}".format(msg.event))
+
+
+def print_Message(msg):
+    if isinstance(msg, UserMessage):
+        print_UserMessage(msg)
+    elif isinstance(msg, AssistantMessage):
+        print_AssistantMessage(msg)
+    elif isinstance(msg, SystemMessage):
+        print_SystemMessage(msg)
+    elif isinstance(msg, ResultMessage):
+        print_ResultMessage(msg)
+    elif isinstance(msg, StreamEvent):
+        print_StreamEvent(msg)
+    else:
+        raise Exception("Unexpected type(msg) = {}".format(type(msg)))
+
+
+async def claude_run(claude_config: ClaudeConfig, prompts: list[str]):
+    options = ClaudeAgentOptions(
+        system_prompt=system_prompt(),
+        allowed_tools=claude_config.allowed_tools,
+        permission_mode=claude_config.perm_mode,
+        cwd=claude_config.cwd,
+        env={
+            "ANTHROPIC_MODEL": claude_config.model,
+            "MAX_THINKING_TOKENS": "65536",
+        },
+    )
+
+    async with ClaudeSDKClient(options=options) as client:
+        for prompt in prompts:
+            print("{} SEND QUERY PROMPT:{}".format(Fore.GREEN, Style.RESET_ALL))
+            print(
+                "{}============================================{}".format(
+                    Fore.GREEN, Style.RESET_ALL
+                )
+            )
+            print(prompt)
+            print(
+                "{}============================================{}".format(
+                    Fore.CYAN, Style.RESET_ALL
+                )
+            )
+            print("{} RESPONSES:{}".format(Fore.CYAN, Style.RESET_ALL))
+            print(
+                "{}============================================{}".format(
+                    Fore.CYAN, Style.RESET_ALL
+                )
+            )
+            await client.query(prompt)
+            async for msg in client.receive_response():
+                print_Message(msg)
+                print(
+                    "{}--------------------------------------------{}".format(
+                        Fore.CYAN, Style.RESET_ALL
+                    )
+                )
+            print(
+                "{}============================================{}".format(
+                    Fore.CYAN, Style.RESET_ALL
+                )
+            )
