@@ -1,3 +1,4 @@
+import time
 from colorama import Fore, Style
 
 from claude_agent_sdk import (
@@ -134,7 +135,9 @@ async def claude_run(claude_config: ClaudeConfig, prompts: list[str]):
     )
 
     async with ClaudeSDKClient(options=options) as client:
-        for prompt in prompts:
+        for i, prompt in enumerate(prompts):
+            start_time = time.time()
+
             print("{} SEND QUERY PROMPT:{}".format(Fore.GREEN, Style.RESET_ALL))
             print(
                 "{}============================================{}".format(
@@ -166,3 +169,7 @@ async def claude_run(claude_config: ClaudeConfig, prompts: list[str]):
                     Fore.CYAN, Style.RESET_ALL
                 )
             )
+
+            duration_time = time.time() - start_time
+            print("FINISHED STEP {}: duration = {}".format(i + 1, duration_time))
+

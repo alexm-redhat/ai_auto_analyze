@@ -118,13 +118,17 @@ class GpuOpsToTransformerBlocksPrompt:
 <output_file> = {output_file}
 
 - The file <transformer_block_high_level_ops_file> describes different types of transformer blocks, and for each transformer block type it provides the sequence of high-level operations inside this block type.
-- The file <gpu_ops_file> provides the sequence of low-level GPU operations that represent an execution of a sequence of transformer blocks, where each transformer block can be of a different type (from <transformer_block_high_level_ops_file>)
+- The file <gpu_ops_file> provides the sequence of low-level GPU operations that represent an execution of a sequence of transformer blocks, where each transformer block can be of a different type (from <transformer_block_high_level_ops_file>).
 
-Do the following plan and think hard:
-- Detect ranges of GPU operations inside <gpu_ops_file> that are full transformer blocks. These blocks are going one after another.
-- For each detected transformer block, detect the transformer block type it represents.
-- For each detected transformer block, match its sequence of GPU operations with the high-level operations from <transformer_block_high_level_ops_file>) based on the type of the block. Make sure different GPU streams are matched precisely to the high level source code.
-- Dump the detected ranges to <output_file>. For each range provide, summary with start/end/duration/wall times and transformer block type, and a table with the GPU operations of this range, where each row in the table has: correlated high-level operation name, start and end times, duration, source GPU stream, and original GPU operation name.
+Do the following plan and think hard (and ultra hard):
+- Detect ranges of GPU operations inside <gpu_ops_file> that are full transformer blocks based on the high-level operations from <transformer_block_high_level_ops_file>. Ensure no operation is missed, and that the start and end operations of each block are consistent.
+- For each detected block, do the following:
+    - Determine the transformer block type it represents
+    - Correlate the sequence of low-level GPU operations of the block with the high-level operations from <transformer_block_high_level_ops_file> based on the transformer block type. Ensure every low-level GPU operation is correlated with a high-level operation, while taking into account different GPU streams and their high-level implementation details.
+    - Review the results of the previous correlation step for mismatches, including the correlation of separate GPU streams. Fix found errors. Repeat this process 3 times to ensure results are precise, clear and concise.
+- Dump the detected blocks to <output_file>. For each block provide:
+    - Summary with start/end/duration/wall times and transformer block type.
+    - A table with the sequence of low-level GPU operations of this block, where each row has: correlated high-level operation name, start and end times, duration, source GPU stream, and original low-level GPU operation name.
 """
 
     def prompt(self):
@@ -199,14 +203,14 @@ class CompareMedianTransformerBlocksPrompt:
 - The file <transformer_block_1> has a median transformer block of <model> running via <framework_name_1>
 - The file <transformer_block_2> has a median transformer block of <model> running via <framework_name_2>
 
-Do the following and think hard: 
-- Match the sequence of operations of the median transformer block from <transformer_block_1> with the median transformer block from <transformer_block_2> based on the high-level understanding of how a transformer block is implemented in both frameworks.
-- Analyze and compare the performance of the two matched blocks from before to find the performance differences.
-- Summarize in a single table the found performance differences, for each difference, provide:
+Do the following and think hard (and ultra hard): 
+- Match the sequence of operations of the median transformer block from <transformer_block_1> with the median transformer block from <transformer_block_2> based on the high-level implementation details of how a transformer block is implemented in both frameworks. Ensure to take into account the separate GPU streams and their start and end synchronization points.
+- Analyze in-depth and compare in-detail the performance of the two matched blocks from before to find the performance differences.
+- Summarize in a single table found performance differences. For each difference, provide:
     - a short description of the difference.
-    - short source code reference for both frameworks.
+    - a short source code reference for both frameworks.
     - a short description how each framework can improve vs the other.
-- Ensure that the summary table covers the full transformer block GPU operation sequences with their high-level correlations.
+- Ensure that the summary table covers the full transformer block GPU operation sequences with their high-level correlations, while properly correlating separate GPU streams.
 - Dump results to <output_file> in the current working directory, including the summary table and other relevant information.
 
 """
@@ -229,6 +233,72 @@ Do the following and think hard:
 
 PERF_COMPARE_BLOCK_FILE = "perf_compare_blocks.txt"
 
+@dataclass
+class PlanPrompt:
+    model: str
+    gpu_type: str
+    transformer_block_1: str
+    framework_name_1: str
+    framework_code_1: str
+    framework_model_code_1: str
+    transformer_block_2: str
+    framework_name_2: str
+    framework_code_2: str
+    framework_model_code_2: str
+    comparison_file: str
+    output_file: str
+    prompt_template: ClassVar[str] = """
+<transformer_block_1> = {transformer_block_1}
+<transformer_block_2> = {transformer_block_2}
+
+<framework_name_1> = {framework_name_1} 
+<framework_code_1> = {framework_code_1}
+<framework_model_code_1> = {framework_model_code_1}
+
+<framework_name_2> = {framework_name_2} 
+<framework_code_2> = {framework_code_2}
+<framework_model_code_2> = {framework_model_code_2}
+
+<comparison_file> = {comparison_file}
+
+<output_file> = {output_file}
+
+- The source code of <framework_name_1> is here: <framework_code_1>
+- The source code of <framework_name_2> is here: <framework_code_2>
+- The source code file of <framework_name_1> that implements model <model> is here: <framework_model_code_1> 
+- The source code file of <framework_name_2> that implements model <model> is here: <framework_model_code_2>
+
+- The file <transformer_block_1> has a median transformer block of <model> running via <framework_name_1>
+- The file <transformer_block_2> has a median transformer block of <model> running via <framework_name_2>
+- The file <comparison_file> has an operation by operation comparison of <transformer_block_1> vs <transformer_block_2>
+
+Do the following and think hard (and ultra hard):
+- For each performance issue in <comparison_file> where <framework_name_1> performs worse, generate an improvement plan as follows:
+    - Fetch related source code files from <framework_code_1> and <framework_code_1> to analyze the performance issue in detail.
+    - Think how the performance issue can be fixed in <framework_code_1> and plan it in detail. Review your plan 3 times to improve it.
+    - Provide a high-level step-by-step summary of the previous plan to fix the performance issue for <framework_name_1>. Ensure the summary is clear and detailed.
+- Order the resulting sequence of plans by priority and their impact
+- Dump the resulting sequence of plans to <output_file>
+
+"""
+
+    def prompt(self):
+        return self.prompt_template.format(
+            model=self.model,
+            gpu_type=self.gpu_type,
+            transformer_block_1=self.transformer_block_1,
+            framework_name_1=self.framework_name_1,
+            framework_code_1=self.framework_code_1,
+            framework_model_code_1=self.framework_model_code_1,
+            transformer_block_2=self.transformer_block_2,
+            framework_name_2=self.framework_name_2,
+            framework_code_2=self.framework_code_2,
+            framework_model_code_2=self.framework_model_code_2,
+            comparison_file=self.comparison_file,
+            output_file=self.output_file,
+        )
+
+PLAN_FILE = "plan.txt"
 
 def gen_analyze_prompts(config: AnalyzeConfig):
     transformer_block_high_level_prompt = TransformerBlockHighLevelPrompt(
@@ -300,4 +370,32 @@ def gen_perf_compare_prompt(configs: list[AnalyzeConfig], block_files: list[str]
         ),
     )
 
-    return perf_cmp_prompt.prompt()
+    return perf_cmp_prompt.prompt(), perf_cmp_prompt.output_file
+
+
+def gen_plan_prompt(configs: list[AnalyzeConfig], block_files: list[str], perf_compare_file: str):
+    assert len(configs) == 2
+    assert len(block_files) == 2
+
+    assert configs[0].model == configs[1].model
+    assert configs[0].gpu_type == configs[1].gpu_type
+
+    plan_prompt = PlanPrompt(
+        model=configs[0].model,
+        gpu_type=configs[0].gpu_type,
+        transformer_block_1=block_files[0],
+        framework_name_1=configs[0].framework_name,
+        framework_code_1=configs[0].framework_code,
+        framework_model_code_1=configs[0].framework_model_code,
+        transformer_block_2=block_files[1],
+        framework_name_2=configs[1].framework_name,
+        framework_code_2=configs[1].framework_code,
+        framework_model_code_2=configs[1].framework_model_code,
+        comparison_file=perf_compare_file,
+        output_file="{}_{}".format(
+            configs[0].framework_name,
+            PLAN_FILE,
+        ),
+    )
+
+    return plan_prompt.prompt()
