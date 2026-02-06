@@ -5,8 +5,8 @@ verify_profile_dir() {
   base="$(basename -- "$cwd")"
   required_file="$cwd/profile_config.sh"
 
-  if [[ "$base" != "profile" ]]; then
-    echo "Error: must be run from a directory named 'profile' (found: '$base')" >&2
+  if [[ "$base" != "auto_profile" ]]; then
+    echo "Error: must be run from a directory named 'auto_profile' (found: '$base')" >&2
     return 1
   fi
 
