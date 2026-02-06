@@ -3,6 +3,7 @@
 source utils.sh
 source profile_config.sh
 
+create_dir_if_missing ${DOCKER_RESULTS_DIR}
 create_clean_dir ${SGL_DOCKER_RESULTS_DIR}
 write_run_metadata ${SGL_DOCKER_RESULTS_DIR} ${SGL_DOCKER_IMAGE}
 

@@ -4,6 +4,7 @@
 source utils.sh
 source profile_config.sh
 
+create_dir_if_missing ${DOCKER_RESULTS_DIR}
 create_clean_dir ${TRT_DOCKER_RESULTS_DIR}
 write_run_metadata ${TRT_DOCKER_RESULTS_DIR} ${TRT_DOCKER_IMAGE}
 
