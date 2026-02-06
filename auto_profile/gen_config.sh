@@ -34,7 +34,7 @@ B200="b200"
 # Docker
 DOCKER_PORT=30000
 DOCKER_HF_HUB_CACHE="/app/hf_hub_cache"
-DOCKER_PROFILE_DIR="/app/profile"
+DOCKER_PROFILE_DIR="/app/auto_profile"
 
 # Framework names
 SGL="sgl"
