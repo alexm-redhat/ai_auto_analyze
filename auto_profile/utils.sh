@@ -40,8 +40,8 @@ write_run_metadata() {
     timestamp="$(date '+%Y-%m-%d %H:%M:%S %Z')"
 
     # Explicitly use hostname command (due to docker)
-    local host_name
-    host_name="$(hostname 2>/dev/null || echo "unknown")"
+    local hostname
+    hostname="$(cat /proc/sys/kernel/hostname 2>/dev/null || echo unknown)"
 
     local os_info="Unknown"
     if [[ -f /etc/os-release ]]; then
@@ -95,20 +95,28 @@ run_and_log() {
     local logfile="$1"
     shift
 
-    set -o pipefail
     set +e
+    set -o pipefail
+
+    local old_term old_int
+    old_term="$(trap -p TERM)"
+    old_int="$(trap -p INT)"
+
+    trap '' TERM INT
 
     {
         printf "RUN-CMD:"
         printf " %q" "$@"
         printf "\n"
 
-        "$@"
+        bash -c 'exec "$@"' bash "$@"
     } 2>&1 | tee "$logfile"
 
     local status=${PIPESTATUS[0]}
 
-    set -e
+    eval "$old_term"
+    eval "$old_int"
+
     return "$status"
 }
 

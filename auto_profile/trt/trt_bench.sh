@@ -141,11 +141,11 @@ for p in "${PROFILES[@]}"; do
             env CUDA_VISIBLE_DEVICES=${gpu_ids} \
             ${run_cmd}
             
-        if is_vllm_profile_enabled; then
+        if is_trt_profile_enabled; then
             log_info "RUN PROFILE"
             run_and_log ${run_log_profile_filename} \
                 env CUDA_VISIBLE_DEVICES=${gpu_ids} \
-                ${profile_prefix} ${run_cmd} 
+                 ${profile_prefix} ${run_cmd}
 
             # Convert nsys binary file to SQLite format (python can read it)
             nsys export \
