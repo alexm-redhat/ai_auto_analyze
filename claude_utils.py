@@ -1,4 +1,5 @@
 import time
+from dataclasses import dataclass, fields
 from colorama import Fore, Style
 
 from claude_agent_sdk import (
@@ -17,7 +18,26 @@ from claude_agent_sdk import (
 
 from claude_agent_sdk.types import StreamEvent
 
-from gen_configs import ClaudeConfig, profile_system_prompt
+@dataclass
+class ClaudeConfig:
+    model: str
+    allowed_tools: list[str]
+    perm_mode: str
+    cwd: str | None
+
+
+def print_claude_config(config: ClaudeConfig) -> None:
+    class_name = config.__class__.__name__
+    print(f"{class_name}:")
+
+    for field in fields(config):
+        name = field.name
+        value = getattr(config, name)
+        print(f"  {name}: {value}")
+
+
+def profile_system_prompt():
+    return "You are a benchmarking and profiling expert of LLMs that run via vLLM, SGLang and TRT"
 
 
 def print_dict(d, indent):
@@ -124,6 +144,8 @@ def print_Message(msg):
 async def claude_run(claude_config: ClaudeConfig, prompts: list[str]):
     assert claude_config.cwd is not None, "claude_config must have CWD set"
 
+    print_claude_config(claude_config)
+    
     options = ClaudeAgentOptions(
         system_prompt=profile_system_prompt(),
         allowed_tools=claude_config.allowed_tools,

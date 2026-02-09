@@ -8,7 +8,7 @@ from claude_utils import claude_run
 from auto_analyze.analyze_configs import claude_config, analyze_configs
 from auto_analyze.analyze_prompts import gen_analyze_prompts, gen_perf_compare_prompt, gen_plan_prompt
 
-LOG_FILE = "run_log_analyze.txt"
+LOG_FILE = "__run_log_analyze.txt"
 
 def gen_prompts():
     prompts = []
@@ -18,11 +18,11 @@ def gen_prompts():
         prompts.extend(cur_prompts)
         block_files.append(block_file)
 
-    perf_cmp_prompt, perf_cmp_file = gen_perf_compare_prompt(analyze_configs, block_files)
-    plan_prompt = gen_plan_prompt(analyze_configs, block_files, perf_cmp_file)
+    # perf_cmp_prompt, perf_cmp_file = gen_perf_compare_prompt(analyze_configs, block_files)
+    # plan_prompt = gen_plan_prompt(analyze_configs, block_files, perf_cmp_file)
     
-    prompts.append(perf_cmp_prompt)
-    prompts.append(plan_prompt)
+    # prompts.append(perf_cmp_prompt)
+    # prompts.append(plan_prompt)
 
     return prompts
 

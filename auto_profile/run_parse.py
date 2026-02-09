@@ -4,13 +4,13 @@ import time
 import asyncio
 import argparse
 
-from gen_utils import Tee
+from utils import Tee
 from claude_utils import claude_run
 
-from gen_configs import ClaudeConfig
+from claude_utils import ClaudeConfig
 from auto_profile.parse_prompts import ParseResultsPrompt
 
-LOG_FILE = "run_log_parse.txt"
+LOG_FILE = "__run_log_parse.txt"
 
 claude_config = ClaudeConfig(
     model="claude-opus-4-6",

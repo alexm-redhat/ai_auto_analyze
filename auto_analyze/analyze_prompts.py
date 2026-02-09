@@ -1,8 +1,7 @@
 from dataclasses import dataclass
 from typing import ClassVar
 
-from gen_configs import AnalyzeConfig
-
+from auto_analyze.analyze_configs import AnalyzeConfig
 
 @dataclass
 class TransformerBlockHighLevelPrompt:
@@ -10,28 +9,38 @@ class TransformerBlockHighLevelPrompt:
     precision: str
     gpu_type: str
     framework_name: str
-    framework_code: str
-    framework_model_code: str
+    framework_source_code: str
+    test_dir: str
     output_file: str
     prompt_template: ClassVar[str] = """
 <model> = {model}
 <precision> = {precision}
 <gpu_type> = {gpu_type}
 <framework_name> = {framework_name}
-<framework_code> = {framework_code}
-<framework_model_code> = {framework_model_code}
+<framework_source_code> = {framework_source_code}
+<test_dir> = {test_dir}
 <output_file> = {output_file}
 
 You specialize in analyzing the inference performance of the model <model> in precision <precision> running via the <framework_name> framework on <gpu_type> GPU.
 
-The code of <framework_name> framework is located here: <framework_code>
-The code that implements the model <model> inside <framework_name> is located here: <framework_model_code>
+<test_id>=[model]-tp_$[num_gpus]-isl_[input_len]-osl_[output_len]
+<test_id_with_batch>=<test_id>-b_[concurrency]
+<full_test_id>=[framework]-<test_id_with_batch>
+
+The <test_dir> test/profile directory has the following format (that encodes test parameters): test-<full_test_id>, and it includes the following files:
+	- bench-<full_test_id>.json file that has the benchmark results of running the test on the framework
+	- run-log-<full_test_id>.txt file that has the run log of executing the framework
+	- run-log-profile-<full_test_id>.txt file that has the profile run log of executing the framework
+	- trace-<full_test_id>.nsys-rep file that has the NSYS profile results
+	- trace-<full_test_id>.sqlite file that is the SQLite version of the nsys-rep file	
+
+The source code of <framework_name> framework is located here: <framework_source_code>
 
 The model <model> is a sequence of transformer blocks.
 The goal of this task is to generate the sequence of high-level operations of a single transformer block.
 
 Do the following plan and think hard:
-- Inspect the code in <framework_model_code>, and any other relevant code files there.
+- Inspect the source code in <framework_source_code> and find the set of files that implement the model <model>. Use run-log* files from the test directory to get hints for what classes and source files are being used to run model <model>.
 - Find the sequence of high-level operations of a single transformer block of <model> based on the previous code inspection.
 - Each high-level operation may have multiple execution modes. Detect these execution modes for each high-level operation.
 - Based on different execution modes of each high-level operation, detect the types of transformer blocks that can run. 
@@ -45,8 +54,8 @@ Do the following plan and think hard:
             precision=self.precision,
             gpu_type=self.gpu_type,
             framework_name=self.framework_name,
-            framework_code=self.framework_code,
-            framework_model_code=self.framework_model_code,
+            framework_source_code=self.framework_source_code,
+            test_dir=self.test_dir,
             output_file=self.output_file,
         )
 
@@ -59,7 +68,7 @@ class GpuOpsPrompt:
     model: str
     gpu_type: str
     framework_name: str
-    trace_file: str
+    test_dir: str
     output_file: str
     output_max_gpu_ops: int
     output_filter_ops: str = ""
@@ -67,17 +76,20 @@ class GpuOpsPrompt:
 <model> = {model}
 <gpu_type> = {gpu_type}
 <framework_name> = {framework_name}
-
-<trace_file> = {trace_file}
-
+<test_dir> = {test_dir}
 <output_file> = {output_file}
 <output_filter_ops> = {output_filter_ops}
 <output_max_gpu_ops> = {output_max_gpu_ops}
 
-- The file <trace_file> is a pytorch trace file of <framework_name> running <model> on <gpu_type> GPU.
+<test_id>=[model]-tp_$[num_gpus]-isl_[input_len]-osl_[output_len]
+<test_id_with_batch>=<test_id>-b_[concurrency]
+<full_test_id>=[framework]-<test_id_with_batch>
+
+
+- The file trace-*.sqlite from <test_dir> is an nsys profile result file in SQLite format of <framework_name> running <model> on <gpu_type> GPU.
 
 Do the following plan and think hard:
-- Understand the basic structure of the pytorch trace file <trace_file>.
+- Understand the basic structure of the SQLite trace file.
 - Understand how GPU streams are represented.
 - Understand how GPU operations are represented. Ignore any CPU operations.
 - Find the sequence of all GPU streams in this trace file.
@@ -91,7 +103,7 @@ Do the following plan and think hard:
             model=self.model,
             gpu_type=self.gpu_type,
             framework_name=self.framework_name,
-            trace_file=self.trace_file,
+            test_dir=self.test_dir,
             output_file=self.output_file,
             output_max_gpu_ops=self.output_max_gpu_ops,
             output_filter_ops=self.output_filter_ops,
@@ -302,8 +314,8 @@ def gen_analyze_prompts(config: AnalyzeConfig):
         precision=config.precision,
         gpu_type=config.gpu_type,
         framework_name=config.framework_name,
-        framework_code=config.framework_code,
-        framework_model_code=config.framework_model_code,
+        framework_source_code=config.framework_source_code,
+        test_dir=config.test_dir,
         output_file="{}_{}".format(
             config.framework_name, TRANSFORMER_BLOCK_HIGH_LEVEL_OPS_FILE
         ),
@@ -313,7 +325,7 @@ def gen_analyze_prompts(config: AnalyzeConfig):
         model=config.model,
         gpu_type=config.gpu_type,
         framework_name=config.framework_name,
-        trace_file=config.trace_file,
+        trace_dir=config.trace_dir,
         output_file="{}_{}".format(config.framework_name, GPU_OPS_FILE),
         output_max_gpu_ops=MAX_GPU_OPS,
         output_filter_ops=config.gpu_ops_filter,
