@@ -1,11 +1,7 @@
 from dataclasses import dataclass
 from typing import ClassVar
 
-from configs import AnalyzeConfig
-
-
-def system_prompt():
-    return "You are a performance programming expert in GPU, CUDA, LLMs, pytorch, profiling and tracing."
+from gen_configs import AnalyzeConfig
 
 
 @dataclass

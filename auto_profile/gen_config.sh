@@ -1,26 +1,28 @@
-verify_profile_dir() {
-  local cwd base required_file
+AUTO_PROFILE_DIR="auto_profile"
 
-  cwd="$PWD"
-  base="$(basename -- "$cwd")"
-  required_file="$cwd/profile_config.sh"
+verify_cwd() {
+    local cwd
+    cwd="$(pwd)"
 
-  if [[ "$base" != "auto_profile" ]]; then
-    echo "Error: must be run from a directory named 'auto_profile' (found: '$base')" >&2
-    return 1
-  fi
+    local missing=0
 
-  if [[ ! -f "$required_file" ]]; then
-    echo "Error: missing required file: profile_config.sh" >&2
-    return 1
-  fi
+    if [[ ! -d "$cwd/${AUTO_PROFILE_DIR}" ]]; then
+        if [[ ! -d "$cwd/$dir" ]]; then
+            echo "Error: Required directory '$dir' not found in $cwd" >&2
+            missing=1
+        fi
+    fi
 
-  return 0
+    if [[ $missing -ne 0 ]]; then
+        return 1
+    fi
+
+    return 0
 }
 
-# Output dirs
-PROFILE_DIR="$PWD"
-if ! verify_profile_dir; then
+# Dirs
+PROFILE_DIR="$(pwd)"/${AUTO_PROFILE_DIR}
+if ! verify_cwd; then
   exit 1
 fi
 

@@ -17,8 +17,7 @@ from claude_agent_sdk import (
 
 from claude_agent_sdk.types import StreamEvent
 
-from configs import ClaudeConfig
-from analyze_prompts import system_prompt
+from gen_configs import ClaudeConfig, profile_system_prompt
 
 
 def print_dict(d, indent):
@@ -123,8 +122,10 @@ def print_Message(msg):
 
 
 async def claude_run(claude_config: ClaudeConfig, prompts: list[str]):
+    assert claude_config.cwd is not None, "claude_config must have CWD set"
+
     options = ClaudeAgentOptions(
-        system_prompt=system_prompt(),
+        system_prompt=profile_system_prompt(),
         allowed_tools=claude_config.allowed_tools,
         permission_mode=claude_config.perm_mode,
         cwd=claude_config.cwd,
@@ -172,4 +173,3 @@ async def claude_run(claude_config: ClaudeConfig, prompts: list[str]):
 
             duration_time = time.time() - start_time
             print("FINISHED STEP {}: duration = {}".format(i + 1, duration_time))
-

@@ -1,4 +1,15 @@
-from configs import ClaudeConfig, AnalyzeConfig
+from gen_configs import ClaudeConfig
+
+@dataclass
+class AnalyzeConfig:
+    model: str
+    precision: str
+    gpu_type: str
+    framework_name: str
+    framework_code: str
+    framework_model_code: str
+    trace_file: str
+    gpu_ops_filter: str = ""
 
 MODEL = "nvidia/DeepSeek-R1-NVFP4"
 PRECISION = "NVFP4"
@@ -13,8 +24,8 @@ VLLM_TRACE_FILE = (
 SGLANG_TRACE_FILE = "{}_1767821176.8858435-TP-0.trace.json.gz".format(SGLANG)
 
 claude_config = ClaudeConfig(
-    model="claude-opus-4-5",
-    # model="claude-sonnet-4-5",
+    model="claude-opus-4-6",
+    # model="claude-opus-4-5",
     allowed_tools=["Read", "Write", "Bash"],
     perm_mode="acceptEdits",  # "bypassPermissions",
     cwd="./perf_cmp_dsr1_nvfp4",

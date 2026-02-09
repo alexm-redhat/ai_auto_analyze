@@ -2,30 +2,13 @@ import sys
 import time
 import asyncio
 
-
-from analyze_configs import claude_config, analyze_configs
-from analyze_prompts import gen_analyze_prompts, gen_perf_compare_prompt, gen_plan_prompt
+from gen_utils import Tee
 from claude_utils import claude_run
 
+from auto_analyze.analyze_configs import claude_config, analyze_configs
+from auto_analyze.analyze_prompts import gen_analyze_prompts, gen_perf_compare_prompt, gen_plan_prompt
 
-LOG_FILE = "run_log.txt"
-
-
-class Tee(object):
-    """A file-like object that writes to multiple files simultaneously."""
-
-    def __init__(self, *files):
-        self.files = files
-
-    def write(self, obj):
-        for f in self.files:
-            f.write(obj)
-            f.flush()  # Ensure immediate writing
-
-    def flush(self):
-        for f in self.files:
-            f.flush()
-
+LOG_FILE = "run_log_analyze.txt"
 
 def gen_prompts():
     prompts = []
