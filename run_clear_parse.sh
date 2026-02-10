@@ -1,5 +1,5 @@
 #!/bin/bash
 
-dir="./auto_profile/results/parse/*"
-echo "Clearing ${dir}"
-rm -rf ./auto_profile/results/parse/*
+source utils.sh
+
+clear_directory_contents "auto_profile/results/parse/*"

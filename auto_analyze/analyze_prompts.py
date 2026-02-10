@@ -3,6 +3,7 @@ from typing import ClassVar
 
 from auto_analyze.analyze_configs import AnalyzeConfig
 
+
 @dataclass
 class TransformerBlockHighLevelPrompt:
     model: str
@@ -33,6 +34,8 @@ The <test_dir> test/profile directory has the following format (that encodes tes
 	- run-log-profile-<full_test_id>.txt file that has the profile run log of executing the framework
 	- trace-<full_test_id>.nsys-rep file that has the NSYS profile results
 	- trace-<full_test_id>.sqlite file that is the SQLite version of the nsys-rep file	
+
+The traces provided are only for pure decode operations (no prefill).
 
 The source code of <framework_name> framework is located here: <framework_source_code>
 
@@ -92,10 +95,12 @@ Do the following plan and think hard:
 - Understand the basic structure of the SQLite trace file.
 - Understand how GPU streams are represented.
 - Understand how GPU operations are represented. Ignore any CPU operations.
+
+For below, focus only on GPU 0 and ignore other GPUs (since we use tensor-parallel and all GPUs are running in a similar way):
 - Find the sequence of all GPU streams in this trace file.
 - Find the sequence of all GPU operations, across all GPU streams, including overlapping ones. Keep the maximum number of GPU operations found to <output_max_gpu_ops>. 
 - If <output_filter_ops> is not empty string, then filter-out GPU operations that match the pattern <output_filter_ops>.
-- Dump the found sequence of GPU operations to file <output_file>, sorted by their start time, where each row in the file will have: a short GPU operation name (max 50 chars), start and end times, duration, source GPU stream number, and full original GPU operation name.
+- Dump the found sequence of GPU operations to file <output_file>, sorted by their start time, where each row in the file will have: a short GPU operation name (max 50 chars), start and end times, duration, source GPU stream number, and full original GPU operation name (limited to 200 chars).
 """
 
     def prompt(self):
@@ -111,7 +116,7 @@ Do the following plan and think hard:
 
 
 GPU_OPS_FILE = "gpu_ops.txt"
-MAX_GPU_OPS = 2000
+MAX_GPU_OPS = 1000
 
 
 @dataclass
@@ -180,133 +185,95 @@ MEDIAN_BLOCK_FILE = "median_block.txt"
 class CompareMedianTransformerBlocksPrompt:
     model: str
     gpu_type: str
-    transformer_block_1: str
-    framework_name_1: str
-    framework_code_1: str
-    framework_model_code_1: str
-    transformer_block_2: str
-    framework_name_2: str
-    framework_code_2: str
-    framework_model_code_2: str
+    transformer_blocks: list[str]
+    framework_names: list[str]
+    framework_source_codes: list[str]
     output_file: str
     prompt_template: ClassVar[str] = """
-<transformer_block_1> = {transformer_block_1}
-<transformer_block_2> = {transformer_block_2}
+<transformer_blocks> = {transformer_blocks}
 
-<framework_name_1> = {framework_name_1} 
-<framework_code_1> = {framework_code_1}
-<framework_model_code_1> = {framework_model_code_1}
-
-<framework_name_2> = {framework_name_2} 
-<framework_code_2> = {framework_code_2}
-<framework_model_code_2> = {framework_model_code_2}
+<framework_names> = {framework_names} 
+<framework_source_codes> = {framework_source_codes}
 
 <output_file> = {output_file}
 
-- The source code of <framework_name_1> is here: <framework_code_1>
-- The source code of <framework_name_2> is here: <framework_code_2>
-- The source code file of <framework_name_1> that implements model <model> is here: <framework_model_code_1> 
-- The source code file of <framework_name_2> that implements model <model> is here: <framework_model_code_2>
+- <framework_names> is a list of framework names
+- <framework_source_codes> is a list of framework source codes that match respectively to <framework_names>
+- <transformer_blocks> is a list of median transformer blocks that match respectively to <framework_names>
 
-- The file <transformer_block_1> has a median transformer block of <model> running via <framework_name_1>
-- The file <transformer_block_2> has a median transformer block of <model> running via <framework_name_2>
-
-Do the following and think hard (and ultra hard): 
-- Match the sequence of operations of the median transformer block from <transformer_block_1> with the median transformer block from <transformer_block_2> based on the high-level implementation details of how a transformer block is implemented in both frameworks. Ensure to take into account the separate GPU streams and their start and end synchronization points.
-- Analyze in-depth and compare in-detail the performance of the two matched blocks from before to find the performance differences.
-- Summarize in a single table found performance differences. For each difference, provide:
+Do the following and think hard:
+- Match the sequence of operations of each median transformer block with the sequence of operations of other median transformer blocks, so that it will be possible to compare all of the median transformer blocks across frameworks. Base the matching on the high-level implementation details of how a transformer blocks are implemented in each framework. Ensure to take into account the separate GPU streams and their start and end synchronization points.
+- Analyze in-depth and compare in-detail the performance of the matched median transformer blocks from before, in order to find the performance differences.
+- Summarize in a single table all of the found performance differences. For each difference, provide:
     - a short description of the difference.
-    - a short source code reference for both frameworks.
+    - a short source code reference for all frameworks.
     - a short description how each framework can improve vs the other.
 - Ensure that the summary table covers the full transformer block GPU operation sequences with their high-level correlations, while properly correlating separate GPU streams.
 - Dump results to <output_file> in the current working directory, including the summary table and other relevant information.
 
 """
-
     def prompt(self):
         return self.prompt_template.format(
             model=self.model,
             gpu_type=self.gpu_type,
-            transformer_block_1=self.transformer_block_1,
-            framework_name_1=self.framework_name_1,
-            framework_code_1=self.framework_code_1,
-            framework_model_code_1=self.framework_model_code_1,
-            transformer_block_2=self.transformer_block_2,
-            framework_name_2=self.framework_name_2,
-            framework_code_2=self.framework_code_2,
-            framework_model_code_2=self.framework_model_code_2,
+            transformer_blocks=self.transformer_blocks,
+            framework_names=self.framework_names,
+            framework_source_codes=self.framework_source_codes,
             output_file=self.output_file,
         )
 
 
 PERF_COMPARE_BLOCK_FILE = "perf_compare_blocks.txt"
 
+
 @dataclass
 class PlanPrompt:
     model: str
     gpu_type: str
-    transformer_block_1: str
-    framework_name_1: str
-    framework_code_1: str
-    framework_model_code_1: str
-    transformer_block_2: str
-    framework_name_2: str
-    framework_code_2: str
-    framework_model_code_2: str
+    transformer_blocks: list[str]
+    framework_names: list[str]
+    framework_source_codes: list[str]
     comparison_file: str
     output_file: str
     prompt_template: ClassVar[str] = """
-<transformer_block_1> = {transformer_block_1}
-<transformer_block_2> = {transformer_block_2}
+<transformer_blocks> = {transformer_blocks}
 
-<framework_name_1> = {framework_name_1} 
-<framework_code_1> = {framework_code_1}
-<framework_model_code_1> = {framework_model_code_1}
-
-<framework_name_2> = {framework_name_2} 
-<framework_code_2> = {framework_code_2}
-<framework_model_code_2> = {framework_model_code_2}
+<framework_names> = {framework_names} 
+<framework_source_codes> = {framework_source_codes}
 
 <comparison_file> = {comparison_file}
 
 <output_file> = {output_file}
 
-- The source code of <framework_name_1> is here: <framework_code_1>
-- The source code of <framework_name_2> is here: <framework_code_2>
-- The source code file of <framework_name_1> that implements model <model> is here: <framework_model_code_1> 
-- The source code file of <framework_name_2> that implements model <model> is here: <framework_model_code_2>
+- <framework_names> is a list of framework names
+- <framework_source_codes> is a list of framework source codes that match respectively to <framework_names>
+- <transformer_blocks> is a list of median transformer blocks that match respectively to <framework_names>
 
-- The file <transformer_block_1> has a median transformer block of <model> running via <framework_name_1>
-- The file <transformer_block_2> has a median transformer block of <model> running via <framework_name_2>
-- The file <comparison_file> has an operation by operation comparison of <transformer_block_1> vs <transformer_block_2>
+- The file <comparison_file> has an operation by operation comparison of <transformer_blocks>
 
-Do the following and think hard (and ultra hard):
-- For each performance issue in <comparison_file> where <framework_name_1> performs worse, generate an improvement plan as follows:
-    - Fetch related source code files from <framework_code_1> and <framework_code_1> to analyze the performance issue in detail.
-    - Think how the performance issue can be fixed in <framework_code_1> and plan it in detail. Review your plan 3 times to improve it.
-    - Provide a high-level step-by-step summary of the previous plan to fix the performance issue for <framework_name_1>. Ensure the summary is clear and detailed.
+Do the following and think hard:
+- For each performance issue in <comparison_file>, generate an improvement plan as follows:
+    - Fetch related source code files from <framework_source_codes> to analyze the performance issue in detail, in order to understand exactly why some frameworks are slower and why some frameworks are faster.
+    - Analyze how the performance issue can be fixed in the slower frameworks and plan it in detail for the slower frameworks. Ensure the step-by-step plan is clear, concise and detailed enough to execute on. 
+    - Provide a high-level step-by-step summary of the previous plan to fix the performance issue for the slower frameworks. Ensure the summary is clear and detailed.
 - Order the resulting sequence of plans by priority and their impact
 - Dump the resulting sequence of plans to <output_file>
 
 """
-
     def prompt(self):
         return self.prompt_template.format(
             model=self.model,
             gpu_type=self.gpu_type,
-            transformer_block_1=self.transformer_block_1,
-            framework_name_1=self.framework_name_1,
-            framework_code_1=self.framework_code_1,
-            framework_model_code_1=self.framework_model_code_1,
-            transformer_block_2=self.transformer_block_2,
-            framework_name_2=self.framework_name_2,
-            framework_code_2=self.framework_code_2,
-            framework_model_code_2=self.framework_model_code_2,
+            transformer_blocks=self.transformer_blocks,
+            framework_names=self.framework_names,
+            framework_source_codes=self.framework_source_codes,
             comparison_file=self.comparison_file,
             output_file=self.output_file,
         )
 
+
 PLAN_FILE = "plan.txt"
+
 
 def gen_analyze_prompts(config: AnalyzeConfig):
     transformer_block_high_level_prompt = TransformerBlockHighLevelPrompt(
@@ -325,7 +292,7 @@ def gen_analyze_prompts(config: AnalyzeConfig):
         model=config.model,
         gpu_type=config.gpu_type,
         framework_name=config.framework_name,
-        trace_dir=config.trace_dir,
+        test_dir=config.test_dir,
         output_file="{}_{}".format(config.framework_name, GPU_OPS_FILE),
         output_max_gpu_ops=MAX_GPU_OPS,
         output_filter_ops=config.gpu_ops_filter,
@@ -354,26 +321,32 @@ def gen_analyze_prompts(config: AnalyzeConfig):
 
 
 def gen_perf_compare_prompt(configs: list[AnalyzeConfig], block_files: list[str]):
-    assert len(configs) == 2
-    assert len(block_files) == 2
+    assert len(configs) >= 2
+    assert len(block_files) >= 2
 
-    assert configs[0].model == configs[1].model
-    assert configs[0].gpu_type == configs[1].gpu_type
+    first_model = configs[0].model
+    all_same_model = all(config.model == first_model for config in configs)
+
+    first_gpu_type = configs[0].gpu_type
+    all_same_gpu_type = all(config.gpu_type == first_gpu_type for config in configs)
+
+    assert all_same_model and all_same_gpu_type, (
+        "all_same_model = {} and all_same_gpu_type = {}".format(
+            all_same_model, all_same_gpu_type
+        )
+    )
+
+    framework_names = [config.framework_name for config in configs]
+    framework_source_codes = ([config.framework_source_code for config in configs],)
 
     perf_cmp_prompt = CompareMedianTransformerBlocksPrompt(
         model=configs[0].model,
         gpu_type=configs[0].gpu_type,
-        transformer_block_1=block_files[0],
-        framework_name_1=configs[0].framework_name,
-        framework_code_1=configs[0].framework_code,
-        framework_model_code_1=configs[0].framework_model_code,
-        transformer_block_2=block_files[1],
-        framework_name_2=configs[1].framework_name,
-        framework_code_2=configs[1].framework_code,
-        framework_model_code_2=configs[1].framework_model_code,
-        output_file="{}_vs_{}_{}".format(
-            configs[0].framework_name,
-            configs[1].framework_name,
+        transformer_blocks=block_files,
+        framework_names=framework_names,
+        framework_source_codes=framework_source_codes,
+        output_file="{}__{}".format(
+            "_".join(framework_names),
             PERF_COMPARE_BLOCK_FILE,
         ),
     )
@@ -381,27 +354,36 @@ def gen_perf_compare_prompt(configs: list[AnalyzeConfig], block_files: list[str]
     return perf_cmp_prompt.prompt(), perf_cmp_prompt.output_file
 
 
-def gen_plan_prompt(configs: list[AnalyzeConfig], block_files: list[str], perf_compare_file: str):
-    assert len(configs) == 2
-    assert len(block_files) == 2
+def gen_plan_prompt(
+    configs: list[AnalyzeConfig], block_files: list[str], perf_compare_file: str
+):
+    assert len(configs) >= 2
+    assert len(block_files) >= 2
 
-    assert configs[0].model == configs[1].model
-    assert configs[0].gpu_type == configs[1].gpu_type
+    first_model = configs[0].model
+    all_same_model = all(config.model == first_model for config in configs)
+
+    first_gpu_type = configs[0].gpu_type
+    all_same_gpu_type = all(config.gpu_type == first_gpu_type for config in configs)
+
+    assert all_same_model and all_same_gpu_type, (
+        "all_same_model = {} and all_same_gpu_type = {}".format(
+            all_same_model, all_same_gpu_type
+        )
+    )
+
+    framework_names = [config.framework_name for config in configs]
+    framework_source_codes = ([config.framework_source_code for config in configs],)
 
     plan_prompt = PlanPrompt(
         model=configs[0].model,
         gpu_type=configs[0].gpu_type,
-        transformer_block_1=block_files[0],
-        framework_name_1=configs[0].framework_name,
-        framework_code_1=configs[0].framework_code,
-        framework_model_code_1=configs[0].framework_model_code,
-        transformer_block_2=block_files[1],
-        framework_name_2=configs[1].framework_name,
-        framework_code_2=configs[1].framework_code,
-        framework_model_code_2=configs[1].framework_model_code,
+        transformer_blocks=block_files,
+        framework_names=framework_names,
+        framework_source_codes=framework_source_codes,
         comparison_file=perf_compare_file,
-        output_file="{}_{}".format(
-            configs[0].framework_name,
+        output_file="{}__{}".format(
+            "_".join(framework_names),
             PLAN_FILE,
         ),
     )
