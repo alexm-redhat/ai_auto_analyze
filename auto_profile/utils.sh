@@ -194,7 +194,7 @@ _run_docker() {
     --ulimit stack=67108864 \
     --shm-size 32g \
     --gpus=all \
-    -v ${PROFILE_DIR}:${DOCKER_PROFILE_DIR} \
+    -v ${BASE_DIR}:${DOCKER_BASE_DIR} \
     -v ${HF_HUB_CACHE}:${DOCKER_HF_HUB_CACHE} \
     --env "HF_HUB_CACHE=${DOCKER_HF_HUB_CACHE}" \
     -p ${DOCKER_PORT}:${DOCKER_PORT} \
