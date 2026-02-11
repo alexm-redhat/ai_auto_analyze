@@ -42,7 +42,7 @@ for p in "${PROFILES[@]}"; do
                 && "${profile[sgl_mode]}" != "none" ]]; then
                 mode=${profile[sgl_mode]}
                 log_info "Set SGL MODE = ${mode}"
-                source "${SGL}/${SGL}_mode_${mode}.sh"
+                source "${AUTO_PROFILE_DIR}/${SGL}/${SGL}_mode_${mode}.sh"
             fi
 
             # Generate test ID

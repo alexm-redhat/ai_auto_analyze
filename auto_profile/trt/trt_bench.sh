@@ -61,7 +61,7 @@ for p in "${PROFILES[@]}"; do
                 && "${profile[trt_mode]}" != "none" ]]; then
             mode="${profile[trt_mode]}"
             log_info "Set TRT MODE = ${mode}"
-            yaml_file="trt/trt_mode_${mode}.yaml"
+            yaml_file="${AUTO_PROFILE_DIR}/trt/trt_mode_${mode}.yaml"
             log_info "Add yaml file: ${yaml_file}"
             yaml_flag="--extra_llm_api_options ${yaml_file}"
         fi

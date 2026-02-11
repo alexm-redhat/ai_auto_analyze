@@ -40,7 +40,7 @@ for p in "${PROFILES[@]}"; do
             if [[ -v profile[vllm_mode] && -n "${profile[vllm_mode]}" ]]; then
                 mode=${profile[vllm_mode]}
                 log_info "Set VLLM MODE = ${mode}"
-                source "${VLLM}/${VLLM}_mode_${mode}.sh"
+                source "${AUTO_PROFILE_DIR}/${VLLM}/${VLLM}_mode_${mode}.sh"
             fi
 
             # Set attn backend
