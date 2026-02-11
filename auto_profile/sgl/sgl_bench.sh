@@ -1,7 +1,7 @@
 #!/bin/bash
 
-source utils.sh
-source profile_config.sh
+source auto_profile/utils.sh
+source auto_profile/profile_config.sh
 
 create_dir_if_missing ${DOCKER_RESULTS_DIR}
 create_clean_dir ${SGL_DOCKER_RESULTS_DIR}
@@ -36,8 +36,10 @@ for p in "${PROFILES[@]}"; do
             ((num_requests = concurrency * NUM_WAVES))
 
             # Set extra env vars
-            mode=""
-            if [[ -v profile[sgl_mode] && -n "${profile[sgl_mode]}" ]]; then
+            mode=${MODE_NONE}
+            if [[ -v profile[sgl_mode] \
+                && -n "${profile[sgl_mode]}" \
+                && "${profile[sgl_mode]}" != "none" ]]; then
                 mode=${profile[sgl_mode]}
                 log_info "Set SGL MODE = ${mode}"
                 source "${SGL}/${SGL}_mode_${mode}.sh"

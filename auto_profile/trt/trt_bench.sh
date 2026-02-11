@@ -1,8 +1,8 @@
 #!/bin/bash
 
 
-source utils.sh
-source profile_config.sh
+source auto_profile/utils.sh
+source auto_profile/profile_config.sh
 
 create_dir_if_missing ${DOCKER_RESULTS_DIR}
 create_clean_dir ${TRT_DOCKER_RESULTS_DIR}
@@ -53,9 +53,12 @@ for p in "${PROFILES[@]}"; do
         ((num_requests = concurrency * NUM_WAVES))
         
         # Set extra options
-        mode=""
+        mode=${MODE_NONE}
         yaml_flag=""
-        if [[ -v profile[trt_mode] && -n "${profile[trt_mode]}" ]]; then
+            
+        if [[ -v profile[trt_mode] \
+                && -n "${profile[trt_mode]}" \
+                && "${profile[trt_mode]}" != "none" ]]; then
             mode="${profile[trt_mode]}"
             log_info "Set TRT MODE = ${mode}"
             yaml_file="trt/trt_mode_${mode}.yaml"

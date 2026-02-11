@@ -1,7 +1,7 @@
 #!/bin/bash
 
-source utils.sh
-source profile_config.sh
+source auto_profile/utils.sh
+source auto_profile/profile_config.sh
 
 create_dir_if_missing ${DOCKER_RESULTS_DIR}
 create_clean_dir ${VLLM_DOCKER_RESULTS_DIR}
@@ -36,7 +36,7 @@ for p in "${PROFILES[@]}"; do
             ((num_requests = concurrency * NUM_WAVES))
             
             # Set extra env vars
-            mode=""
+            mode=${MODE_NONE}
             if [[ -v profile[vllm_mode] && -n "${profile[vllm_mode]}" ]]; then
                 mode=${profile[vllm_mode]}
                 log_info "Set VLLM MODE = ${mode}"

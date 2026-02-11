@@ -1,4 +1,4 @@
-source gen_config.sh
+source auto_profile/config.sh
 
 _log() {
   local level="$1"
@@ -201,14 +201,61 @@ run_docker() {
   _run_docker ${name} ${image} "./${framework}/${framework}_bench.sh" "${extra_flags}"
 }
 
+clean_dir_contents() {
+    local dir="${1:-}"
+
+    # Require argument
+    if [[ -z "$dir" ]]; then
+        echo "Error: No directory argument provided." >&2
+        return 1
+    fi
+
+    # Must exist and be directory
+    if [[ ! -d "$dir" ]]; then
+        echo "Error: '$dir' is not a valid directory." >&2
+        return 1
+    fi
+
+    # Resolve absolute path
+    local abs_dir
+    abs_dir="$(realpath "$dir")"
+
+    # Protect dangerous paths
+    local home_abs
+    home_abs="$(realpath "$HOME")"
+
+    case "$abs_dir" in
+        "/"|"."|".."|"$home_abs")
+            echo "Error: Refusing to clean dangerous directory: $abs_dir" >&2
+            return 1
+            ;;
+    esac
+
+    # Enable matching of hidden files
+    shopt -s nullglob dotglob
+
+    local contents=("$abs_dir"/*)
+
+    if (( ${#contents[@]} == 0 )); then
+        echo "Directory already empty: $abs_dir"
+        return 0
+    fi
+
+    log_info "Cleaning contents of: $abs_dir"
+    for item in "${contents[@]}"; do
+        echo "  Removing: $item"
+    done
+
+    rm -rf -- "${contents[@]}"
+
+    echo "Done."
+}
+
 create_clean_dir() {
   local dir="$1"
 
   create_dir_if_missing ${dir}
-
-  log_info "Cleaning directory: ${dir}"
-  rm -rf ${dir}/*
-
+  clean_dir_contents ${dir}
 }
 
 make_test_name() {

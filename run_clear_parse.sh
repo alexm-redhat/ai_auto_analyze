@@ -1,5 +1,5 @@
 #!/bin/bash
 
-source utils.sh
+source auto_profile/utils.sh
 
-clear_directory_contents "auto_profile/results/parse/*"
+clean_dir_contents "auto_profile/results/parse/*"
