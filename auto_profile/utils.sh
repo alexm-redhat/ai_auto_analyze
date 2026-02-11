@@ -186,10 +186,11 @@ _run_docker() {
   
   engine="$(detect_container_engine)" || exit 1
 
+  # --ipc=host \ TODO: Remove
+  
   ${engine} run \
     -it \
     --rm \
-    --ipc=host \
     --ulimit memlock=-1 \
     --ulimit stack=67108864 \
     --shm-size 32g \
