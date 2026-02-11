@@ -274,6 +274,41 @@ Do the following and think hard:
 
 PLAN_FILE = "plan.txt"
 
+@dataclass
+class SummaryPDFPrompt:
+    cmp_file: str
+    plan_file: str
+    output_file: str
+    prompt_template: ClassVar[str] = """
+<cmp_file> = {cmp_file}
+<plan_file> = {plan_file} 
+<output_file> = {output_file}
+
+- The file <cmp_file> provides a performance comparison of a transformer block between the frameworks
+- The file <plan_file> provides an improvement plan for each performance issue for each framework
+
+The goal of this task is to generate a summary PDF file that has the comparison and planning information. Think hard for this task.
+
+Generate a summary PDF as follows:
+- It has information from <cmp_file> and <plan_file
+- The PDF is technical and nicely formatted
+- PDF preseves good alignment of tables
+- PDF uses PDF-style formatting instead of TXT formatting
+- Focus only on issues where vllm is slower than the other frameworks
+
+Dump the resulting PDF to <output_file>.
+
+"""
+    def prompt(self):
+        return self.prompt_template.format(
+            cmp_file=self.cmp_file,
+            plan_file=self.plan_file,
+            output_file=self.output_file,
+        )
+
+
+PLAN_FILE = "plan.txt"
+
 
 def gen_analyze_prompts(config: AnalyzeConfig):
     transformer_block_high_level_prompt = TransformerBlockHighLevelPrompt(
