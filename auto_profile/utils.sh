@@ -136,33 +136,6 @@ remove_docker_if_exists() {
 
 }
 
-detect_container_engine() {
-  # If docker exists as a real executable, use it
-  if command -v docker >/dev/null 2>&1; then
-    # Check if docker resolves to podman binary
-    local resolved
-    resolved="$(command -v docker)"
-
-    if [[ "$resolved" == *podman* ]]; then
-      echo "podman"
-      return 0
-    fi
-
-    # If it's a real docker binary
-    echo "docker"
-    return 0
-  fi
-
-  # If docker not found but podman exists
-  if command -v podman >/dev/null 2>&1; then
-    echo "podman"
-    return 0
-  fi
-
-  echo "Error: Neither docker nor podman found in PATH" >&2
-  return 1
-}
-
 _run_docker() {
   local name="$1"
   local image="$2"
@@ -183,16 +156,7 @@ _run_docker() {
     log_error "No container cmd provided"
     return 1
   fi
-  
-  engine="$(detect_container_engine)" || exit 1
 
-  # --ipc=host \ TODO: Remove
-
-  #--userns=keep-id \
-  #--security-opt label=disable \
-  # --device nvidia.com/gpu=all \
-  # -v /home/alexm-redhat/vllm_workspace:/vllm-workspace \
-  # --env "HF_HOME=${DOCKER_HF_HUB_CACHE}" \
   docker run \
     -it \
     --rm \

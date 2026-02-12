@@ -1,8 +1,7 @@
 
 # Docker images
-# VLLM_DOCKER_IMAGE=vllm/vllm-openai:latest  
-VLLM_DOCKER_IMAGE=vllm/vllm-openai:cu130-nightly
-
+VLLM_DOCKER_IMAGE=vllm/vllm-openai:latest  
+# VLLM_DOCKER_IMAGE=vllm/vllm-openai:cu130-nightly
 SGL_DOCKER_IMAGE=lmsysorg/sglang:latest
 TRT_DOCKER_IMAGE=nvcr.io/nvidia/tensorrt-llm/release:1.3.0rc0
 
@@ -10,9 +9,9 @@ TRT_DOCKER_IMAGE=nvcr.io/nvidia/tensorrt-llm/release:1.3.0rc0
 GPU_TYPE=${B200}
 
 GPU_IDS_8="0,1,2,3,4,5,6,7"
-GPU_IDS_4="3,4,5,7"
-GPU_IDS_2="3,4"
-GPU_IDS_1="3"
+GPU_IDS_4="0,1,2,3"
+GPU_IDS_2="0,1"
+GPU_IDS_1="0"
 
 # Profiles
 MODE_NONE="none"
@@ -38,7 +37,7 @@ MODE_NONE="none"
 
 declare -A QWEN3_CODER_480B_A35B_DECODE_ONLY=(
   [model]="Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8"
-  [gpu_ids]=${GPU_IDS_8}
+  [gpu_ids]=${GPU_IDS_4}
   [input_len]=4
   [output_len]=1024
   [vllm_mode]="moe_no_fi"
@@ -68,10 +67,10 @@ declare -A QWEN3_CODER_NEXT_DECODE_ONLY=(
 
 # PROFILES=(DSR1_NVFP4_DECODE_ONLY QWEN3_235B_A22B_NVFP4_DECODE_ONLY)
 # PROFILES=(QWEN3_CODER_480B_A35B_DECODE_ONLY)
-PROFILES=(QWEN3_CODER_480B_A35B_DECODE_ONLY DEEPSEEK_V3_2_DECODE_ONLY QWEN3_CODER_NEXT_DECODE_ONLY)
+PROFILES=(QWEN3_CODER_480B_A35B_DECODE_ONLY) # DEEPSEEK_V3_2_DECODE_ONLY QWEN3_CODER_NEXT_DECODE_ONLY)
 
 # Batch sizes
-PROFILE_CONCURRENCIES="1 16" # 64"
+PROFILE_CONCURRENCIES="1" # 16" # 64"
 
 # Profile on/off
 VLLM_ENABLE_PROFILE=1

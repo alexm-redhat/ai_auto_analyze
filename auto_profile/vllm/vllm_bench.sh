@@ -115,6 +115,9 @@ for p in "${PROFILES[@]}"; do
                 profile_prefix="nsys profile ${NSYS_DEFAULT_FLAGS} -o ${trace_file_prefix}"
             fi
 
+            # TODO: Fine-tune more
+            max_model_len=$(( output_len * concurrency ))
+
             # Run
             run_cmd="vllm bench throughput \
                 --disable-log-requests \
@@ -128,6 +131,7 @@ for p in "${PROFILES[@]}"; do
                 --random-output-len ${output_len} \
                 --max-num-seqs ${concurrency} \
                 --num-prompts ${num_requests} \
+                --max-model-len ${max_model_len} \
                 --output-json ${result_filename}"
             
             log_info "RUN NORMAL"
