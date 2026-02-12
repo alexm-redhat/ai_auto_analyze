@@ -37,7 +37,9 @@ for p in "${PROFILES[@]}"; do
             
             # Set extra env vars
             mode=${MODE_NONE}
-            if [[ -v profile[vllm_mode] && -n "${profile[vllm_mode]}" ]]; then
+            if [[ -v profile[vllm_mode] \
+                && -n "${profile[vllm_mode]}" \
+                && "${profile[vllm_mode]}" != "none" ]]; then
                 mode=${profile[vllm_mode]}
                 log_info "Set VLLM MODE = ${mode}"
                 source "${AUTO_PROFILE_DIR}/${VLLM}/${VLLM}_mode_${mode}.sh"
@@ -115,8 +117,8 @@ for p in "${PROFILES[@]}"; do
                 profile_prefix="nsys profile ${NSYS_DEFAULT_FLAGS} -o ${trace_file_prefix}"
             fi
 
-            # TODO: Fine-tune more
-            max_model_len=$(( output_len * concurrency ))
+            # TODO: [AlexM] Fine-tune more
+            max_model_len=$(( 1024 * 128 ))
 
             # Run
             run_cmd="vllm bench throughput \

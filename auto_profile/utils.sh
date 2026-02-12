@@ -160,6 +160,7 @@ _run_docker() {
   docker run \
     -it \
     --rm \
+    --runtime nvidia \
     --ulimit memlock=-1 \
     --ulimit stack=67108864 \
     --ipc=host \
@@ -420,13 +421,43 @@ is_trt_profile_enabled() {
 }
 
 find_nsys_dir() {
-  nsys_path=$(readlink -f "$(which nsys)") || {
-    echo "nsys not found in PATH" >&2
-    exit 1
-  }
+  local nsys_path nsys_install_dir
 
-  nsys_bin_dir=$(dirname "$nsys_path")
-  nsys_install_dir=$(dirname "$nsys_bin_dir")
+  # 1) Respect NSYS_HOME if user provided it
+  if [[ -n "${NSYS_HOME:-}" && -x "${NSYS_HOME}/bin/nsys" ]]; then
+    echo "$(readlink -f "${NSYS_HOME}")"
+    return 0
+  fi
 
-  echo ${nsys_install_dir}
+  # 2) Prefer real installs under /opt/nvidia/nsight-systems
+  # Pick the newest version directory if multiple exist
+  nsys_path="$(
+    ls -1d /opt/nvidia/nsight-systems/*/bin/nsys 2>/dev/null \
+      | sort -V \
+      | tail -n 1
+  )"
+
+  if [[ -n "${nsys_path}" && -x "${nsys_path}" ]]; then
+    nsys_install_dir="$(dirname "$(dirname "${nsys_path}")")"
+    echo "$(readlink -f "${nsys_install_dir}")"
+    return 0
+  fi
+
+  # 3) Fallback: use PATH, but reject CUDA Toolkit wrapper locations
+  nsys_path="$(command -v nsys 2>/dev/null || true)"
+  if [[ -z "${nsys_path}" ]]; then
+    echo "nsys not found in PATH and no /opt/nvidia/nsight-systems install found" >&2
+    return 1
+  fi
+
+  nsys_path="$(readlink -f "${nsys_path}")"
+
+  # Reject the common CUDA Toolkit wrapper path(s)
+  if [[ "${nsys_path}" == /usr/local/cuda*/bin/nsys ]]; then
+    echo "Found nsys wrapper at ${nsys_path}, but no /opt/nvidia/nsight-systems install found" >&2
+    return 1
+  fi
+
+  nsys_install_dir="$(dirname "$(dirname "${nsys_path}")")"
+  echo "${nsys_install_dir}"
 }
