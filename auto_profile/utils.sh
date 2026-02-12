@@ -187,23 +187,29 @@ _run_docker() {
   engine="$(detect_container_engine)" || exit 1
 
   # --ipc=host \ TODO: Remove
-  
-  ${engine} run \
+
+  #--userns=keep-id \
+  #--security-opt label=disable \
+  # --device nvidia.com/gpu=all \
+  # -v /home/alexm-redhat/vllm_workspace:/vllm-workspace \
+  # --env "HF_HOME=${DOCKER_HF_HUB_CACHE}" \
+  docker run \
     -it \
     --rm \
     --ulimit memlock=-1 \
     --ulimit stack=67108864 \
+    --ipc=host \
     --shm-size 32g \
     --gpus=all \
     -v ${BASE_DIR}:${DOCKER_BASE_DIR} \
-    -v ${HF_HUB_CACHE}:${DOCKER_HF_HUB_CACHE} \
+    -v ${HF_HUB_CACHE}:"${DOCKER_HF_HUB_CACHE}" \
     --env "HF_HUB_CACHE=${DOCKER_HF_HUB_CACHE}" \
     -p ${DOCKER_PORT}:${DOCKER_PORT} \
     --name ${name} \
     --entrypoint /bin/bash \
     ${extra_flags} \
     ${image} \
-    -c "cd ${DOCKER_PROFILE_DIR}; time ${cmd}"
+    -c "cd ${DOCKER_BASE_DIR}; time ${cmd}"
 
 }
 
@@ -228,7 +234,7 @@ run_docker() {
   
   remove_docker_if_exists $name
 
-  _run_docker ${name} ${image} "./${framework}/${framework}_bench.sh" "${extra_flags}"
+  _run_docker ${name} ${image} "${AUTO_PROFILE_DIR}/${framework}/${framework}_bench.sh" "${extra_flags}"
 }
 
 clean_dir_contents() {
