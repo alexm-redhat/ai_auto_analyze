@@ -116,6 +116,11 @@ for p in "${PROFILES[@]}"; do
                 profile_prefix="nsys profile ${NSYS_DEFAULT_FLAGS} -o ${trace_file_prefix}"
             fi
 
+            
+            # Increase watchdog timeout to 30min to avoid timeout 
+            # due to long 10-20min DeepGEMM compilations
+            DIST_TIMEOUT_FLAG="--dist-timeout 1800"
+
             # Run
             run_cmd="python -m sglang.bench_one_batch \
                 --model-path ${model} \
@@ -124,6 +129,7 @@ for p in "${PROFILES[@]}"; do
                 --input-len ${input_len} \
                 --output-len ${output_len} \
                 --result-filename ${result_filename} \
+                $DIST_TIMEOUT_FLAG \
                 $CUDA_GRAPH_FLAG"
             
             log_info "RUN NORMAL"
