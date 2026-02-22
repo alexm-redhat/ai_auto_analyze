@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import ClassVar
 
+
 @dataclass
 class ParseResultsPrompt:
     results_dir: str
@@ -24,7 +25,7 @@ The structure of each sub-directory is as follows:
 - Each model tested has a directory, for example, HF nvidia/DeepSeek-R1-NVFP4 is represented as nvidia__DeepSeek-R1-NVFP4
 - Inside each model’s directory, there is a sequence of test directories, where each test directory represents a specific test with specific parameters
 - Each test directory name has the following format (that encodes test parameters): test-<full_test_id>
-- Inside each test directory there are the following files:
+- Inside each test directory there are the following files (that we call <test_files>): 
 	- bench-<full_test_id>.json file that has the benchmark results of running the test on the framework
 	- run-log-<full_test_id>.txt file that has the run log of the execution
 	- [OPTIONAL] run-log-profile-<full_test_id>.txt file that has the profile run log of the execution
@@ -33,7 +34,17 @@ The structure of each sub-directory is as follows:
 - The contents of each bench-<full_test_id>.json are specific for each framework. We are interested in TPOT. If it is not presented directly, then compute it.
 - Each of the format dirnames/filenames may have also "-mode_[mode]" at the end which is optional
 
-Generate a python program that creates a sequence of summary comparison tables as follows:
+<test_results_dir> = <output_dir>/test_results
+<test_dir> = <test_results_dir>/<test_id_with_batch>
+
+First, restructure the directories from <results_dir> into <test_results_dir>, so that they are organized as follows:
+- Create <test_results_dir> (if it does not exist), and ensure it is empty
+- For each <test_id_with_batch>, create <test_dir>, and inside this directory:
+    - Create <test_dir>/vllm, <test_dir>/sgl and <test_dir>/trt, a directory for each framework
+    - For each framework directory, copy all of the associated <test_files> into this directory.
+    - Also, copy the associated <metadata_file> of this test into <test_dir>
+
+Next, generate a python program that creates a sequence of summary comparison tables as follows:
 - Create a single summary table for each <test_id> where the table has the following format:
     - Columns are frameworks names: vLLM, SGLang and TRT (from left to right)
     - Rows are batch sizes tested: from small batch size to the larger one.
@@ -43,10 +54,11 @@ Generate a python program that creates a sequence of summary comparison tables a
         - “mode” used (if exists)
         - Docker image used
         - GPU type used
-        - The full directory path to test-<full_test_id> sub-directory for all 3 frameworks. Group these paths based on batch sizes, so there is 3 paths for each batch size, from small batch to larger
+        - For each batch size tested, the full directory path to <test_dir>, sorted from small batch size to larger
 - Create a txt file for each table, where the filename encodes the table <test_id>. Ensure the table is aligned properly, clear and concise.
 - Also, create a single txt file that has all tables together. Ensure all tables are aligned properly.
 - Create a PDF file with all of the tables.
+- Store all results in <output_dir>
 """
 
     def prompt(self):
@@ -54,4 +66,3 @@ Generate a python program that creates a sequence of summary comparison tables a
             results_dir=self.results_dir,
             output_dir=self.output_dir,
         )
-

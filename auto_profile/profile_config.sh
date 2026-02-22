@@ -2,7 +2,7 @@
 # Docker images
 VLLM_DOCKER_IMAGE=vllm/vllm-openai:cu130-nightly  
 SGL_DOCKER_IMAGE=lmsysorg/sglang:latest
-TRT_DOCKER_IMAGE=nvcr.io/nvidia/tensorrt-llm/release:1.3.0rc0
+TRT_DOCKER_IMAGE=nvcr.io/nvidia/tensorrt-llm/release:1.3.0rc4
 
 # GPU
 GPU_TYPE=${B200}
