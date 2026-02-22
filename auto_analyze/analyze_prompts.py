@@ -290,7 +290,7 @@ class SummaryPDFPrompt:
 The goal of this task is to generate a summary PDF file that has the comparison and planning information. Think hard for this task.
 
 Generate a summary PDF as follows:
-- It has information from <cmp_file> and <plan_file
+- It has information from <cmp_file> and <plan_file>
 - The PDF is technical and nicely formatted
 - PDF preseves good alignment of tables
 - PDF uses PDF-style formatting instead of TXT formatting

@@ -11,24 +11,24 @@ class AnalyzeConfig:
     test_dir: str
     gpu_ops_filter: str = ""
 
-MODEL = "nvidia/DeepSeek-R1-NVFP4"
-PRECISION = "NVFP4"
-GPU_TYPE = "B200"
+MODEL = "deepseek-ai/DeepSeek-V3.2"
+PRECISION = "FP8"
+GPU_TYPE = "H200"
 
 VLLM = "vllm"
 SGLANG = "sglang"
 TRT = "trt"
 
-VLLM_TEST_DIR = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_profile/results/vllm/nvidia__DeepSeek-R1-NVFP4/test-vllm-nvidia__DeepSeek-R1-NVFP4-tp_4-isl_4-osl_1024-b_1-mode_moe_fp4_trtllm_fa_mla_b200"
-SGLANG_TEST_DIR = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_profile/results/sgl/nvidia__DeepSeek-R1-NVFP4/test-sgl-nvidia__DeepSeek-R1-NVFP4-tp_4-isl_4-osl_1024-b_1-mode_none"
-TRT_TEST_DIR = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_profile/results/trt/nvidia__DeepSeek-R1-NVFP4/test-trt-nvidia__DeepSeek-R1-NVFP4-tp_4-isl_4-osl_1024-b_1-mode_moe_trtllm_b200"
+VLLM_TEST_DIR = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_profile/results/parse/test_results/deepseek-ai__DeepSeek-V3.2-tp_8-isl_4-osl_1024-b_1-mode_none/vllm"
+SGLANG_TEST_DIR = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_profile/results/parse/test_results/deepseek-ai__DeepSeek-V3.2-tp_8-isl_4-osl_1024-b_1-mode_none/sgl"
+TRT_TEST_DIR = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_profile/results/parse/test_results/deepseek-ai__DeepSeek-V3.2-tp_8-isl_4-osl_1024-b_1-mode_none/trt"
 
 claude_config = ClaudeConfig(
     model="claude-opus-4-6",
     # model="claude-opus-4-5",
     allowed_tools=["Read", "Write", "Bash"],
     perm_mode="acceptEdits",  # "bypassPermissions",
-    cwd="/home/alexm-redhat/code/ai_auto_perf_analysis/auto_analyze/results",
+    cwd="/home/alexm-redhat/code/ai_auto_perf_analysis/auto_analyze/results/deepseek-ai__DeepSeek-V3.2-tp_8-isl_4-osl_1024-b_1",
 )
 
 analyze_configs = [
