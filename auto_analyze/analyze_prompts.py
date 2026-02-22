@@ -28,8 +28,8 @@ You specialize in analyzing the inference performance of the model <model> in pr
 <test_id_with_batch>=<test_id>-b_[concurrency]
 <full_test_id>=[framework]-<test_id_with_batch>
 
-The <test_dir> test/profile directory has the following format (that encodes test parameters): test-<full_test_id>, and it includes the following files:
-	- bench-<full_test_id>.json file that has the benchmark results of running the test on the framework
+The <test_dir> test/profile directory has the following format (that encodes test parameters): ../<test_id_with_batch>/[framework], and it includes the following files:
+    - bench-<full_test_id>.json file that has the benchmark results of running the test on the framework
 	- run-log-<full_test_id>.txt file that has the run log of executing the framework
 	- run-log-profile-<full_test_id>.txt file that has the profile run log of executing the framework
 	- trace-<full_test_id>.nsys-rep file that has the NSYS profile results

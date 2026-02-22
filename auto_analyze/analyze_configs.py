@@ -28,7 +28,7 @@ claude_config = ClaudeConfig(
     # model="claude-opus-4-5",
     allowed_tools=["Read", "Write", "Bash"],
     perm_mode="acceptEdits",  # "bypassPermissions",
-    cwd="/home/alexm-redhat/code/ai_auto_perf_analysis/auto_analyze/results/deepseek-ai__DeepSeek-V3.2-tp_8-isl_4-osl_1024-b_1",
+    cwd="/home/alexm-redhat/code/ai_auto_perf_analysis/auto_analyze/results",
 )
 
 analyze_configs = [

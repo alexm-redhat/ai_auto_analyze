@@ -1,9 +1,5 @@
 #!/bin/bash
-set -euo pipefail
 
-BASE_DIR="auto_analyze/results"
+source auto_profile/utils.sh
 
-
-source utils.sh
-
-clear_directory_contents "auto_analyze/results"
+clean_dir_contents "auto_analyze/results"
