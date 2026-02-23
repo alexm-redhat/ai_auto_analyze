@@ -7,7 +7,7 @@ import asyncio
 from utils import Tee
 from claude_utils import claude_run
 
-from auto_analyze.analyze_configs import claude_config
+from auto_analyze.analyze_configs import claude_config, MODEL, PRECISION, GPU_TYPE
 from auto_analyze.analyze_prompts import SummaryPDFPrompt
 
 LOG_FILE = "__run_log_gen_pdf.txt"
@@ -15,6 +15,9 @@ LOG_FILE = "__run_log_gen_pdf.txt"
 
 def gen_prompts(args):
     summary_pdf_prompt = SummaryPDFPrompt(
+        model=MODEL,
+        precision=PRECISION,
+        gpu_type=GPU_TYPE,
         cmp_file=args.cmp_file,
         plan_file=args.plan_file,
         output_file=args.output_pdf_file,

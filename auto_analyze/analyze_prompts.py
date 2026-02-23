@@ -276,31 +276,43 @@ PLAN_FILE = "plan.txt"
 
 @dataclass
 class SummaryPDFPrompt:
+    model: str
+    precision: str
+    gpu_type: str
     cmp_file: str
     plan_file: str
     output_file: str
     prompt_template: ClassVar[str] = """
+<model> = {model}
+<precision> = {precision}
+<gpu_type> = {gpu_type}
 <cmp_file> = {cmp_file}
 <plan_file> = {plan_file} 
 <output_file> = {output_file}
 
+- The model benchmarked and compared is <model> in precision <precision> running on <gpu_type> gpu
 - The file <cmp_file> provides a performance comparison of a transformer block between the frameworks
 - The file <plan_file> provides an improvement plan for each performance issue for each framework
 
-The goal of this task is to generate a summary PDF file that has the comparison and planning information. Think hard for this task.
+The goal of this task is to generate a summary PDF file that has the comparison and planning information presented in a clear, concise and detailed way. Think hard for this task to ensure it is done best.
 
 Generate a summary PDF as follows:
 - It has information from <cmp_file> and <plan_file>
-- The PDF is technical and nicely formatted
-- PDF preseves good alignment of tables
+- The PDF is technical, nicely formatted, with professional colors
+- The PDF preseves proper alignment of tables and text
+- The PDF is structured for both high-level executives and professional programmers
 - PDF uses PDF-style formatting instead of TXT formatting
 - Focus only on issues where vllm is slower than the other frameworks
+- Ensure the PDF is brief, clear and concise while being detailed and thorough
 
 Dump the resulting PDF to <output_file>.
 
 """
     def prompt(self):
         return self.prompt_template.format(
+            model=self.model,
+            precision=self.precision,
+            gpu_type=self.gpu_type,
             cmp_file=self.cmp_file,
             plan_file=self.plan_file,
             output_file=self.output_file,
