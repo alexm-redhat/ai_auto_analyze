@@ -1,0 +1,139 @@
+================================================================================
+PR INFO: FA3-Based Sparse MLA Attention Backend for DeepSeek-V3.2
+================================================================================
+
+Plan Step: #1 — Sparse Attention → CUTLASS FA3
+Priority:  CRITICAL
+Est. Savings: ~51 us per transformer block (82% of the vLLM-SGLang gap)
+
+================================================================================
+SUMMARY
+================================================================================
+
+This PR adds a new FA3-based sparse MLA attention backend (FA3_SPARSE_MLA)
+that replaces the slower FlashMLA C kernel (sparse_attn_fwd_kernel) with
+vLLM's existing FlashAttention-3 kernel on SM90 (Hopper/H200).
+
+Key insight: vLLM already has FA3 with full MLA + paged KV support on SM90
+(via _vllm_fa3_C.fwd). The existing FlashAttnMLAImpl uses it for non-sparse
+MLA decode. This PR creates a sparse variant using page_size=1 paged KV
+with topk_indices as the block_table for sparse token-level access.
+
+================================================================================
+SEQUENCE OF PATCHES
+================================================================================
+
+Patch 1 (pr__1.patch): Backend Registry
+  File: vllm/v1/attention/backends/registry.py
+  Change: Add FA3_SPARSE_MLA to AttentionBackendEnum
+
+Patch 2 (pr__2.patch): CUDA Platform Priority
+  File: vllm/platforms/cuda.py
+  Change: Add FA3_SPARSE_MLA to MLA backend priority list (before FLASHMLA_SPARSE)
+
+New File: FA3 Sparse MLA Backend
+  File: vllm/v1/attention/backends/mla/fa3_sparse_mla.py
+  Classes: FA3SparseMLABackend, FA3SparseMLAMetadata, FA3SparseMLAMetadataBuilder,
+           FA3SparseMLAImpl
+
+New File: Tests
+  File: tests/kernels/attention/test_fa3_sparse_mla.py
+  17 tests covering: correctness, head padding, split-KV, scheduler metadata,
+  topk index conversion, backend registration, supports_combination, performance
+
+Full Patch: pr__full.patch (all changes combined)
+
+================================================================================
+CHANGES SUMMARY
+================================================================================
+
+NEW FILES (2):
+  1. vllm/v1/attention/backends/mla/fa3_sparse_mla.py (~330 lines)
+     - FA3SparseMLABackend: AttentionBackend subclass for sparse MLA on SM90
+     - FA3SparseMLAMetadata: Simplified metadata (no FP8 machinery)
+     - FA3SparseMLAMetadataBuilder: Builds metadata with page_size=1
+     - FA3SparseMLAImpl: Core implementation using flash_attn_varlen_func
+
+  2. tests/kernels/attention/test_fa3_sparse_mla.py (~400 lines)
+     - 17 tests: correctness, no-padding, split-KV, scheduler, index conversion,
+       backend registration, supports_combination, performance benchmark
+
+MODIFIED FILES (2):
+  3. vllm/v1/attention/backends/registry.py (+3 lines)
+     - Register FA3_SPARSE_MLA enum entry
+
+  4. vllm/platforms/cuda.py (+1 line)
+     - Add FA3_SPARSE_MLA to MLA backend priority (above FLASHMLA_SPARSE)
+
+UNCHANGED FILES:
+  - vllm/vllm_flash_attn/* — FA3 kernel already has everything needed
+  - vllm/v1/attention/backends/mla/flashmla_sparse.py — kept as fallback
+  - vllm/model_executor/layers/attention/mla_attention.py — MLA wrapper unchanged
+
+================================================================================
+PERFORMANCE
+================================================================================
+
+  Test: DeepSeek-V3.2, FP8, H200, TP=8, ISL=4, OSL=1024, Batch=1
+
+  Before (FLASHMLA_SPARSE):
+    - sparse_attn_fwd_kernel: 63.78 us
+    - Total sparse attention: 68.14 us
+    - KV cache: FP8 (656 bytes/token)
+    - Head padding: 16→64 (4x waste)
+
+  After (FA3_SPARSE_MLA):
+    - FA3 device_kernel: ~10-15 us (estimated from SGLang trace)
+    - Total sparse attention: ~17 us (estimated)
+    - KV cache: BF16 (576 bytes/token) — 12% smaller
+    - No head padding needed
+
+  Estimated block wall time improvement: 252.1 us → ~201.7 us (1.25x speedup)
+
+================================================================================
+TEST RESULTS
+================================================================================
+
+  All 17 tests pass, no skips:
+
+  test_fa3_sparse_mla_correctness[16-64-1]       PASSED
+  test_fa3_sparse_mla_correctness[16-64-2]       PASSED
+  test_fa3_sparse_mla_correctness[16-64-4]       PASSED
+  test_fa3_sparse_mla_correctness[16-256-1]      PASSED
+  test_fa3_sparse_mla_correctness[16-256-2]      PASSED
+  test_fa3_sparse_mla_correctness[16-256-4]      PASSED
+  test_fa3_sparse_mla_correctness[16-512-1]      PASSED
+  test_fa3_sparse_mla_correctness[16-512-2]      PASSED
+  test_fa3_sparse_mla_correctness[16-512-4]      PASSED
+  test_fa3_sparse_mla_no_head_padding            PASSED
+  test_fa3_sparse_mla_split_kv[0]                PASSED
+  test_fa3_sparse_mla_split_kv[1]                PASSED
+  test_fa3_sparse_mla_scheduler_metadata_page_size_1  PASSED
+  test_fa3_sparse_mla_topk_index_conversion      PASSED
+  test_fa3_sparse_mla_backend_registration       PASSED
+  test_fa3_sparse_mla_backend_supports_combination  PASSED
+  test_fa3_sparse_mla_performance[1]             PASSED
+
+  Correctness: FA3 output matches naive reference within bf16 tolerance
+  Performance: ~59 us Python-level (includes overhead; CUDA kernel ~15 us)
+
+================================================================================
+KEY TECHNICAL DETAILS
+================================================================================
+
+1. FA3 C++ API (hopper/flash_api.cpp) verified to support:
+   - Paged KV on SM90 (non-TMA path for page_size=1)
+   - MLA qv parameter (head_size<=64, head_size_v>=256, SM90 only)
+   - Different V headdim (head_size=64, head_size_v=512)
+   - Split-KV with non-TMA paged KV
+
+2. page_size=1 trick: Each KV cache token is treated as a "page",
+   and topk_indices (global slot indices) serve as the block_table.
+   FA3 uses non-TMA load path for page_size=1 (page_size % kBlockN != 0).
+
+3. BF16 KV cache: 576 bytes/token (512 nope + 64 rope, all BF16).
+   Smaller than FP8's 656 bytes/token (512B FP8 + 16B scales + 128B BF16).
+
+================================================================================
+END
+================================================================================

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from claude_utils import ClaudeConfig
 
+
 @dataclass
 class AnalyzeConfig:
     model: str
@@ -11,9 +12,13 @@ class AnalyzeConfig:
     test_dir: str
     gpu_ops_filter: str = ""
 
+
 MODEL = "deepseek-ai/DeepSeek-V3.2"
 PRECISION = "FP8"
 GPU_TYPE = "H200"
+ISL = 4
+OSL = 1024
+BATCH_SIZE = 1
 
 VLLM = "vllm"
 SGLANG = "sglang"
@@ -25,12 +30,14 @@ TRT_TEST_DIR = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_profile/resul
 
 claude_config = ClaudeConfig(
     model="claude-opus-4-6",
+    # model="claude-opus-4-6[1m]",
     # model="claude-opus-4-5",
     allowed_tools=["Read", "Write", "Bash"],
     perm_mode="acceptEdits",  # "bypassPermissions",
     cwd="/home/alexm-redhat/code/ai_auto_perf_analysis/auto_analyze/results",
 )
 
+# TODO: Now we need export CLAUDE_CODE_ALLOWED_PATHS=/home/alexm-redhat/code, remove this requirement
 analyze_configs = [
     AnalyzeConfig(
         model=MODEL,

@@ -14,12 +14,12 @@ def gen_prompts():
     prompts = []
     block_files = []
     for analyze_config in analyze_configs:
-        cur_prompts, block_file = gen_analyze_prompts(analyze_config)
+        cur_prompts, block_file, _ = gen_analyze_prompts(analyze_config)
         prompts.extend(cur_prompts)
         block_files.append(block_file)
 
     perf_cmp_prompt, perf_cmp_file = gen_perf_compare_prompt(analyze_configs, block_files)
-    plan_prompt = gen_plan_prompt(analyze_configs, block_files, perf_cmp_file)
+    plan_prompt, plan_file = gen_plan_prompt(analyze_configs, block_files, perf_cmp_file)
     
     prompts.append(perf_cmp_prompt)
     prompts.append(plan_prompt)

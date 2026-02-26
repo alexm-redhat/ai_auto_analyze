@@ -1,0 +1,14 @@
+diff --git a/vllm/v1/attention/backends/registry.py b/vllm/v1/attention/backends/registry.py
+index 8e60551e2..965ecbf6b 100644
+--- a/vllm/v1/attention/backends/registry.py
++++ b/vllm/v1/attention/backends/registry.py
+@@ -73,6 +73,9 @@ class AttentionBackendEnum(Enum, metaclass=_AttentionBackendEnumMeta):
+         "vllm.v1.attention.backends.mla.flashmla_sparse.FlashMLASparseBackend"
+     )
+     FLASH_ATTN_MLA = "vllm.v1.attention.backends.mla.flashattn_mla.FlashAttnMLABackend"
++    FA3_SPARSE_MLA = (
++        "vllm.v1.attention.backends.mla.fa3_sparse_mla.FA3SparseMLABackend"
++    )
+     NO_ATTENTION = "vllm.v1.attention.backends.no_attention.NoAttentionBackend"
+     FLEX_ATTENTION = "vllm.v1.attention.backends.flex_attention.FlexAttentionBackend"
+     TREE_ATTN = "vllm.v1.attention.backends.tree_attn.TreeAttentionBackend"

@@ -212,6 +212,7 @@ Do the following and think hard:
 - Dump results to <output_file> in the current working directory, including the summary table and other relevant information.
 
 """
+
     def prompt(self):
         return self.prompt_template.format(
             model=self.model,
@@ -260,6 +261,7 @@ Do the following and think hard:
 - Dump the resulting sequence of plans to <output_file>
 
 """
+
     def prompt(self):
         return self.prompt_template.format(
             model=self.model,
@@ -273,6 +275,7 @@ Do the following and think hard:
 
 
 PLAN_FILE = "plan.txt"
+
 
 @dataclass
 class SummaryPDFPrompt:
@@ -291,7 +294,7 @@ class SummaryPDFPrompt:
 <output_file> = {output_file}
 
 - The model benchmarked and compared is <model> in precision <precision> running on <gpu_type> gpu
-- The file <cmp_file> provides a performance comparison of a transformer block between the frameworks
+
 - The file <plan_file> provides an improvement plan for each performance issue for each framework
 
 The goal of this task is to generate a summary PDF file that has the comparison and planning information presented in a clear, concise and detailed way. Think hard for this task to ensure it is done best.
@@ -308,6 +311,7 @@ Generate a summary PDF as follows:
 Dump the resulting PDF to <output_file>.
 
 """
+
     def prompt(self):
         return self.prompt_template.format(
             model=self.model,
@@ -319,7 +323,90 @@ Dump the resulting PDF to <output_file>.
         )
 
 
-PLAN_FILE = "plan.txt"
+@dataclass
+class CombinedTracePrompt:
+    model: str
+    precision: str
+    gpu_type: str
+    isl: int
+    osl: int
+    batch_size: int
+    framework_names: list[str]
+    framework_source_codes: list[str]
+    transformer_blocks: list[str]
+    transformer_high_level_blocks: list[str]
+    test_dirs: list[str]
+    cmp_file: str
+    plan_file: str
+    output_file: str
+    prompt_template: ClassVar[str] = """
+<model> = {model}
+<precision> = {precision}
+<gpu_type> = {gpu_type}
+<isl> = {isl}
+<osl> = {osl}
+<batch_size> = {batch_size}
+<framework_names> = {framework_names} 
+<framework_source_codes> = {framework_source_codes}
+<transformer_blocks> = {transformer_blocks}
+<transformer_high_level_blocks> = {transformer_high_level_blocks}
+<test_dirs> = {test_dirs}
+<cmp_file> = {cmp_file}
+<plan_file> = {plan_file}
+<output_file> = {output_file}
+
+Make sure to do all work in Claude's current working directory.
+
+- The model benchmarked and compared is <model> in precision <precision> running on <gpu_type> gpu with ISL <isl>, OSL <osl>, and batch size <batch_size>. 
+- <framework_names> is a list of framework names
+- <framework_source_codes> is a list of framework source codes that match respectively to <framework_names>
+- <transformer_blocks> is a list of median transformer blocks that match respectively to <framework_names>
+- <transformer_high_level_blocks> is a list of high-level transformer block operations (correlated to source code) that match respectively to <framework_names>, and <transformer_blocks>.
+- The file <cmp_file> provides a performance comparison of a transformer block between the frameworks
+- The file <plan_file> provides an improvement plan for each performance issue for each framework
+- <test_dirs> is a list of test directories that match respectively to <framework_names>, where each test directory has:
+    - The file trace-*.sqlite - an nsys profile result file in SQLite format of the respective framework running <model> in precision <precision> on <gpu_type> gpu
+
+The goal of this task is to generate a new combined trace file, in Chrome trace json format, that provides a visual/timeline comparison of the median transformer blocks <transformer_blocks> for frameworks <framework_names> (in this order). Do the following and think hard:
+- Color-code similar type operations with same color
+- Provide a single top level bar with the test information/params used. This includes that the model tested is <model> in precision <precision> running on <gpu_type> gpu with ISL <isl>, OSL <osl>, and batch size <batch_size>. Put this bar first before anything else.
+- Ensure all median transformer blocks start at the same time point 0.
+- For each framework's trace-*.sqlite NSYS profile trace, focus on GPU 0, and find the range that represents the median transformer block of this framework, while detecting the cuda streams in this range.
+- For each framework, show the cuda streams as they appear in the above found range (one after another). I.e. each framework's lanes / cuda-streams are grouped together. Ensure all operations are showed across all cuda streams of the found range (per framework).
+- For each framework, provide a single "phase lane" that annotates the median transformer block phases. Ensure this phase lane is immediately above the cuda stream lanes, not between them. Also, ensure the phase names are brief and clear. Also, ensure that there are no gaps in phases, i.e. every cuda stream operation should have an associated phase name sub-range in the phase lane.
+- If there are operations in the same cuda stream that have some overlap, then ensure to place these operations on different lanes in this stream, so that perfetto viewer will not drop them.
+- For each operation, ensure that all NSYS GPU utilization details and params (if exists) are also transferred to a GPU utilization section.
+- For each operation name, prepend a prefix high-level name, based on the median transformer block correlation of operation names to their high-level names. Ensure the high-level name is brief and clear.
+- For each operation, add a detailed description field that has the following information:
+    - Source code references
+    - Explanation of the operations (based on median transformer block file and high level transformer block file)
+    - Any other relevant details that are important for understanding the operation in the context of the trace and the comparison.
+    - If this is a vLLM operation, then provide an explanation of the relevant improvement plan for this operation, and a reference to the specific improvement.
+
+Dump the new combined trace file to <output_file> in Claude's current working directory.
+
+"""
+
+    def prompt(self):
+        return self.prompt_template.format(
+            model=self.model,
+            precision=self.precision,
+            gpu_type=self.gpu_type,
+            isl=self.isl,
+            osl=self.osl,
+            batch_size=self.batch_size,
+            framework_names=self.framework_names,
+            framework_source_codes=self.framework_source_codes,
+            transformer_blocks=self.transformer_blocks,
+            transformer_high_level_blocks=self.transformer_high_level_blocks,
+            test_dirs=self.test_dirs,
+            cmp_file=self.cmp_file,
+            plan_file=self.plan_file,
+            output_file=self.output_file,
+        )
+
+
+TRACE_COMBINED_FILE = "trace_combined_transformer_blocks.json"
 
 
 def gen_analyze_prompts(config: AnalyzeConfig):
@@ -364,6 +451,7 @@ def gen_analyze_prompts(config: AnalyzeConfig):
             median_block_prompt.prompt(),
         ],
         median_block_prompt.output_file,
+        transformer_block_high_level_prompt.output_file,
     )
 
 
@@ -435,4 +523,41 @@ def gen_plan_prompt(
         ),
     )
 
-    return plan_prompt.prompt()
+    return plan_prompt.prompt(), plan_prompt.output_file
+
+
+def gen_combined_trace_prompt(
+    model, precision, gpu_type, isl, osl, batch_size, configs: list[AnalyzeConfig]
+):
+    framework_names = [config.framework_name for config in configs]
+    framework_source_codes = [config.framework_source_code for config in configs]
+    test_dirs = [config.test_dir for config in configs]
+
+    block_files = []
+    block_high_level_files = []
+    for config in configs:
+        _, block_file, block_high_level_file = gen_analyze_prompts(config)
+        block_files.append(block_file)
+        block_high_level_files.append(block_high_level_file)
+
+    _, perf_cmp_file = gen_perf_compare_prompt(configs, block_files)
+    _, plan_file = gen_plan_prompt(configs, block_files, perf_cmp_file)
+
+    combined_trace_prompt = CombinedTracePrompt(
+        model=model,
+        precision=precision,
+        gpu_type=gpu_type,
+        isl=isl,
+        osl=osl,
+        batch_size=batch_size,
+        framework_names=framework_names,
+        framework_source_codes=framework_source_codes,
+        transformer_blocks=block_files,
+        transformer_high_level_blocks=block_high_level_files,
+        test_dirs=test_dirs,
+        cmp_file=perf_cmp_file,
+        plan_file=plan_file,
+        output_file=TRACE_COMBINED_FILE,
+    )
+
+    return combined_trace_prompt.prompt()
