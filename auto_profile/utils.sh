@@ -204,6 +204,8 @@ run_docker() {
 
 clean_dir_contents() {
     local dir="${1:-}"
+    shift || true
+    local skip_names=("$@")
 
     # Require argument
     if [[ -z "$dir" ]]; then
@@ -236,18 +238,38 @@ clean_dir_contents() {
     shopt -s nullglob dotglob
 
     local contents=("$abs_dir"/*)
+    local to_delete=()
+    local item base skip
 
-    if (( ${#contents[@]} == 0 )); then
-        echo "Directory already empty: $abs_dir"
+    for item in "${contents[@]}"; do
+        base="$(basename "$item")"
+        skip=0
+
+        for name in "${skip_names[@]}"; do
+            if [[ "$base" == "$name" ]]; then
+                skip=1
+                break
+            fi
+        done
+
+        if (( skip )); then
+            log_info "Skipping: $item"
+        else
+            to_delete+=("$item")
+        fi
+    done
+
+    if (( ${#to_delete[@]} == 0 )); then
+        echo "Directory already empty or only contains skipped items: $abs_dir"
         return 0
     fi
 
     log_info "Cleaning contents of: $abs_dir"
-    for item in "${contents[@]}"; do
+    for item in "${to_delete[@]}"; do
         echo "  Removing: $item"
     done
 
-    rm -rf -- "${contents[@]}"
+    rm -rf -- "${to_delete[@]}"
 
     echo "Done."
 }
