@@ -5,27 +5,41 @@ import asyncio
 from utils import Tee
 from claude_utils import claude_run
 
-from auto_code_gen.code_gen_configs import claude_config, code_gen_config
+from auto_code_gen.code_gen_configs import claude_config, code_gen_config, VLLM, SGLANG
+# from auto_code_gen.code_gen_prompts import (
+#     gen_HighLevelCodePlanPrompt,
+#     gen_SmallPRsPrompt,
+# )
+
 from auto_code_gen.code_gen_prompts import (
-    gen_HighLevelCodePlanPrompt,
-    gen_SmallPRsPrompt,
+    create_context_str,
+    gen_CodeTracePrompt,
+    gen_CodePortPlanPrompt,
 )
 
 LOG_FILE = "__run_log_code_gen.txt"
 
 
 def gen_prompts():
-    high_level_code_plan_prompt = gen_HighLevelCodePlanPrompt(
-        claude_config=claude_config, code_gen_config=code_gen_config
+    context = create_context_str(claude_config, code_gen_config)
+
+    vllm_code_trace_prompt = gen_CodeTracePrompt(context=context, framework=VLLM)
+    sglang_code_trace_prompt = gen_CodeTracePrompt(context=context, framework=SGLANG)
+
+    code_port_plan_prompt = gen_CodePortPlanPrompt(
+        context=context,
+        frameworks=[SGLANG, VLLM],
+        framework_code_trace_files=[
+            sglang_code_trace_prompt.output_file,
+            vllm_code_trace_prompt.output_file,
+        ],
     )
 
-    small_prs_prompt = gen_SmallPRsPrompt(
-        claude_config=claude_config,
-        code_gen_config=code_gen_config,
-        high_level_code_plan_file=high_level_code_plan_prompt.output_file,
-    )
-
-    prompts = [high_level_code_plan_prompt.prompt(), small_prs_prompt.prompt()]
+    prompts = [
+        sglang_code_trace_prompt.prompt(),
+        vllm_code_trace_prompt.prompt(),
+        code_port_plan_prompt.prompt(),
+    ]
     return prompts
 
 

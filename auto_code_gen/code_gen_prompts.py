@@ -3,6 +3,240 @@ from typing import ClassVar
 
 from auto_code_gen.code_gen_configs import ClaudeConfig, CodeGenConfig
 
+
+def create_context_str(claude_config: ClaudeConfig, code_gen_config: CodeGenConfig):
+    return """
+<context>
+
+<cwd> 
+{cwd} 
+</cwd>
+
+<model>
+{model}
+</model>
+<precision>
+{precision}
+</precision>
+<gpu_type>
+{gpu_type}
+</gpu_type>
+<batch_size>
+{batch_size}
+</batch_size>
+<isl>
+{isl}
+</isl>
+<osl>
+{osl}
+</osl>
+
+<tested_execution>
+Execution of model <model> in precision <precision> on <gpu_type> GPU with ISL <isl>, OSL <osl> and batch size <batch_size>
+</tested_execution>
+
+<framework_names>
+{framework_names}
+</framework_names>
+<framework_source_codes>
+{framework_source_codes}
+</framework_source_codes>
+<framework_test_dirs>
+{framework_test_dirs}
+</framework_test_dirs>
+<transformer_block_high_level_ops_files>
+{transformer_block_high_level_ops_files}
+</transformer_block_high_level_ops_files>
+<median_transformer_block_files>
+{median_transformer_block_files}
+</median_transformer_block_files>
+
+<plan_file>
+{plan_file}
+</plan_file>
+<plan_step>
+{plan_step}
+</plan_step>
+
+</context>
+
+<definitions>
+<code_trace> 
+code-paths, code-pieces, and their associated call-chains 
+</code_trace>
+</definitions>
+
+<context_explanations>
+- <cwd> is the current working directory
+
+- <framework_names> is the list of frameworks involved.
+- <framework_source_codes> is the list of framework source codes for <framework_names> respectively.
+- <framework_test_dirs> is the list of test directories for <framework_names> respectively, testing the <tested_execution>. Each directory has a run-log-*.txt that can be inspected to detect the active code pieces during the run of <tested_execution>.
+- <transformer_block_high_level_ops_files> is the list of high-level transformer block operation files for <framework_names> respectively.
+- <median_transformer_block_files> is the list of median low-level => high-level transformer block operation files for <framework_names> respectively. 
+
+- The file <plan_file> has a sequence of improvement steps for <slower_framework> based on the comparison between frameworks running <tested_execution>.
+- The improvement plan step <plan_step> from <plan_file> is what we want to implement for <slower_framework>
+</context_explanations>
+
+""".format(
+        cwd=claude_config.cwd,
+        model=code_gen_config.model,
+        precision=code_gen_config.precision,
+        gpu_type=code_gen_config.gpu_type,
+        batch_size=code_gen_config.batch_size,
+        isl=code_gen_config.isl,
+        osl=code_gen_config.osl,
+        framework_names=code_gen_config.framework_names,
+        framework_source_codes=code_gen_config.framework_source_codes,
+        framework_test_dirs=code_gen_config.framework_test_dirs,
+        transformer_block_high_level_ops_files=code_gen_config.transformer_block_high_level_ops_files,
+        median_transformer_block_files=code_gen_config.median_transformer_block_files,
+        plan_file=code_gen_config.plan_file,
+        plan_step=code_gen_config.plan_step,
+    )
+
+
+@dataclass
+class CodeTracePrompt:
+    context: str
+    framework: str
+    output_file: str
+    prompt_template: ClassVar[str] = """
+
+{context}
+
+<definitions>
+<framework>
+{framework}
+</framework>
+</definitions>
+
+<instructions>
+The goal of this task is to detect the <code_trace> inside <framework> that is active during the execution of <tested_execution> for improvement plan step <plan_step> (from <plan_file>). Think hard for this task and follow these guidelines:
+- Analyze and understand in-detail the improvement plan step <plan_step> by inspecting all relevant files and data.
+- Detect the <code_trace> inside <framework> that is relevant for improvement plan step <plan_step>.
+- For the detected <code_trace>, perform a detailed analysis of how exactly the <code_trace> executes for the following iteration modes:
+    - decode-only runs
+    - prefill-only runs
+    - a mix of prefill and decode runs
+- Document each execution mode with its details, step-by-step from the high-level point of the <code_trace> to the lower-level point. Provide all critical details, which includes:
+    - For each function in the trace, provide its goal, info, inputs (+shapes), and outputs (+shapes)
+    - For the lowest level functions, inspect their source code in detail, and understand their inputs/outputs, including shapes and function assumptions.
+    - Document classes/objects and their relations
+    - Be professional, clear and consice, while documenting the trace gradually, in an incremental way from top to bottom.
+- Document how cuda graphs affect each execution mode as well and how it is handled in the codebase
+</instructions>
+
+<output>
+- Dump results to <cwd>/{output_file}
+</output>
+
+"""
+
+    def prompt(self):
+        return self.prompt_template.format(
+            context=self.context,
+            framework=self.framework,
+            output_file=self.output_file,
+        )
+
+
+CODE_TRACE_FILE = "code_trace.txt"
+
+
+def gen_CodeTracePrompt(
+    context: str,
+    framework: str,
+):
+    return CodeTracePrompt(
+        context=context,
+        framework=framework,
+        output_file="{}_{}".format(framework, CODE_TRACE_FILE),
+    )
+
+
+@dataclass
+class CodePortPlanPrompt:
+    context: str
+    frameworks: list[str]
+    framework_code_trace_files: list[str]
+    output_file: str
+    prompt_template: ClassVar[str] = """
+
+{context}
+
+<definitions>
+<frameworks>
+{frameworks}
+</frameworks>
+<framework_code_trace_files>
+{framework_code_trace_files}
+</framework_code_trace_files>
+</definitions>
+
+<definition_explanations>
+- <frameworks> is a list of 2 frameworks, where the first framework is the "source" and the second is the "target". 
+- <framework_code_trace_files> is a list of code trace files for <frameworks> respectively. Each code trace file describes the <code_trace> of the specific framework that is active during the execution of <tested_execution> for improvement plan step <plan_step> (from <plan_file>).
+</definition_explanations>
+
+<instructions>
+The goal of this task is to provide a high-level multi-step coding plan that implements the improvement plan step <plan_step> (from <plan_file>) inside "target" framework by porting <code_trace> parts from the "source" framework to "target" framework. Think hard for this task and follow these guidelines:
+- Analyze and understand in-detail the code traces in <framework_code_trace_files>.
+- Detect <code_trace> parts of the "source" framework to port to "target" framework. Take into account the execution modes:
+    - decode-only
+    - prefill-only
+    - mixed prefill and decode
+- For each ported code part, ensure minimal changes to the part and minimal changes to the "target" framework. 
+- For each ported code part, if code adjustments are necessary due to "target" framework constraints, then try best to minimize these code adjustments as much as possible.
+- For each ported code part, provide porting idea documentation, with what is ported, why, what is unchanged, and what is changed, and why. Be clear, concise and professional.
+- For any code part in "target" framework that is used here, ensure it is used correctly with the ported code parts. 
+    - Verify inputs/outputs for all execution modes: decode, prefill, and mix
+    - Verify all constraints and dependencies
+- Ensure cuda graphs are handled properly for all execution modes
+- Ensure the end-to-end multi-step plan is coherent, bug-free and works for all execution modes:
+    - Sanity and verify shapes of inputs/outputs
+    - Verify API usage is fully correct and coherent
+    - Verify the lowest level parts are used correctly
+    - Inspect and trace all of the necessary source code points that are sensitive.
+</instructions>
+
+<output>
+- Dump the high-level multi-step coding plan to <cwd>/{output_file}
+</output>
+
+"""
+
+    def prompt(self):
+        return self.prompt_template.format(
+            context=self.context,
+            frameworks=self.frameworks,
+            framework_code_trace_files=self.framework_code_trace_files,
+            output_file=self.output_file,
+        )
+
+
+CODE_PORT_PLAN_PREFIX = "code_port_plan"
+
+
+def gen_CodePortPlanPrompt(
+    context: str,
+    frameworks: list[str],
+    framework_code_trace_files: list[str],
+):
+    assert len(frameworks) == 2
+    assert len(frameworks) == len(framework_code_trace_files)
+
+    return CodePortPlanPrompt(
+        context=context,
+        frameworks=frameworks,
+        framework_code_trace_files=framework_code_trace_files,
+        output_file="{}_from_{}_to_{}.txt".format(
+            CODE_PORT_PLAN_PREFIX, frameworks[0], frameworks[1]
+        ),
+    )
+
+
 @dataclass
 class HighLevelCodePlanPrompt:
     claude_config: ClaudeConfig
@@ -247,6 +481,7 @@ def gen_SmallPRsPrompt(
         output_file_prefix=PR_FILE_PREFIX,
     )
 
+
 @dataclass
 class FixIssuePrompt:
     claude_config: ClaudeConfig
@@ -361,6 +596,7 @@ Do not modify any files inside <prs_dir>.
             issue_to_fix_file=self.issue_to_fix_file,
             issue_cwd=self.issue_cwd,
         )
+
 
 def gen_FixIssuePrompt(
     claude_config: ClaudeConfig,
