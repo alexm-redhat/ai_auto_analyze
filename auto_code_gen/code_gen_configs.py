@@ -40,7 +40,7 @@ TRT = "trt"
 framework_names = [VLLM, SGLANG, TRT]
 
 VLLM_CODE = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_code_gen/prs/vllm"
-SGLANG_CODE = "/home/alexm-redhat/code/sglang"
+SGLANG_CODE = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_code_gen/prs/sglang"
 TRT_CODE = "/home/alexm-redhat/code/TensorRT-LLM"
 
 framework_source_codes = [VLLM_CODE, SGLANG_CODE, TRT_CODE]
@@ -55,8 +55,8 @@ SLOWER_FRAMEWORK_TEST_DIR = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_
 
 FASTER_TRANSFORMER_BLOCK_HIGH_LEVEL_OPS_FILE = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_analyze/results/sglang_transformer_block_high_level_ops.txt"
 SLOWER_TRANSFORMER_BLOCK_HIGH_LEVEL_OPS_FILE = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_analyze/results/vllm_transformer_block_high_level_ops.txt"
-FASTER_MEDIAN_TRANSFORMER_BLOCK_FILE = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_analyze/results/sglang_median_block.txt.txt"
-SLOWER_MEDIAN_TRANSFORMER_BLOCK_FILE = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_analyze/results/vllm_median_block.txt.txt"
+FASTER_MEDIAN_TRANSFORMER_BLOCK_FILE = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_analyze/results/sglang_median_block.txt"
+SLOWER_MEDIAN_TRANSFORMER_BLOCK_FILE = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_analyze/results/vllm_median_block.txt"
 
 # TODO: Now we need export CLAUDE_CODE_ALLOWED_PATHS=/home/alexm-redhat/code, remove this requirement
 claude_config = ClaudeConfig(

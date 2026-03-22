@@ -153,8 +153,11 @@ async def claude_run(claude_config: ClaudeConfig, prompts: list[str]):
         cwd=claude_config.cwd,
         env={
             "ANTHROPIC_MODEL": claude_config.model,
-            "MAX_THINKING_TOKENS": "65536",
+            "MAX_THINKING_TOKENS": "1048576",
         },
+        model=claude_config.model,
+        thinking={"type": "adaptive"},
+        effort="max",
     )
 
     async with ClaudeSDKClient(options=options) as client:

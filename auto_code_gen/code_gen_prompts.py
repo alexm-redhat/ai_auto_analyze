@@ -3,7 +3,6 @@ from typing import ClassVar
 
 from auto_code_gen.code_gen_configs import ClaudeConfig, CodeGenConfig
 
-
 @dataclass
 class HighLevelCodePlanPrompt:
     claude_config: ClaudeConfig
@@ -55,20 +54,31 @@ The traces/logs provided are only for pure decode operations (no prefill).
 - <framework_names> is a list of framework names involved
 - <framework_source_codes> is a list of framework source codes that match respectively to <framework_names>
 - The file <plan_file> has a sequence of improvement steps for <slower_framework> based on the comparison between frameworks running the model <model> in precision <precision> on <gpu_type> GPU, with ISL <isl>, OSL <osl> and batch size <batch_size>.
+- Ensure to read PDFs if exist. Install necessary tools or codes. Do not skip it.
 
 The goal of this task is to generate a multi-step high level coding plan for <slower_framework>, where the steps go from lower-level code changes to higher-level, that will implement the improvement step <plan_step> from <plan_file> where the faster framework is <faster_framework> and the slower is <slower_framework>. For the implementation, prefer to port code pieces from <faster_framework> to <slower_framework> with minimal changes to the code pieces, while adjusting the code pieces for <slower_framework> (if needed). Do the following and think hard:
 - Analyze and understand in-detail the specific improvement <plan_step> by inspecting all relevant files and data.
 - Focus on making the <slower_framework> faster for the specific execution that was tested here, so that code changes to <slower_framework> are minimal. 
-- Inspect in-detail source codes, run logs, high-level transformer block files, and median transformer block files (low-level => high-level per-op) (and anything else needed) to determine the exact code-paths / code-pieces taken in both <faster_framework> and <slower_framework> for this specific test here.
+- Inspect in-detail source codes, run logs, high-level transformer block files, and median transformer block files (low-level => high-level per-op) (and anything else needed) to determine the exact code-paths / code-pieces taken in both <faster_framework> and <slower_framework> for this specific test and improvement step here.
 - Detect and analyze in-detail the code-pieces from <faster_framework> that make it faster for this specific improvement. 
-- Detect and analyze in-detail the code-pieces from <slower_framework> that make it slower for this specific improvement.
+    - Ensure to detect and understand in-detail the call-chain that is invoked from high-level functions/objects to lower-level functions/objects for this specific test and improvement step here. 
+    - Find the related commits and their descriptions to get more info/documentation about the active/found code-pieces and their related call-chain.  
+    - Consider and understand in-detail how the detected call-chain works for prefill-only, decode-only, and mix of prefill-decode execution modes.
+- Detect and analyze in-detail the code-pieces from <slower_framework> that make it slower for this specific improvement. 
+    - Ensure to detect and understand in-detail the call-chain that is invoked from high-level functions/objects to lower-level functions/objects for this specific test and improvement step here. 
+    - Find the related commits and their descriptions to get more info/documentation about the active/found code-pieces and their related call-chain. 
+    - Consider and understand in-detail how the detected call-chain works for prefill-only, decode-only, and mix of prefill-decode execution modes.
 - Determine which code pieces from <faster_framework> make sense to port to the <slower_framework> with minimal changes to both the code pieces and the <slower_framework> structure.
-- For the sequence of ported code pieces to <slower_framework>, document how the code pieces are ported from <faster_framework> to <slower_framework>, what is unchanged and what is changed and why. Be professional, clear and concise, so it is easy to understand. 
+    - Ensure prefill-only, decode-only and mix of prefill-decode execution modes are handled in <slower_framework> in a similar way to <faster_framework>.
+- For the sequence of ported code pieces to <slower_framework>, document how the code pieces are ported from <faster_framework> to <slower_framework>, what is unchanged and what is changed and why. Be professional, clear and concise. Ensure to explain the changes vs the call-chain that is invoked.
 - Avoid importing code/modules/kernels directly from <faster_framework>, but instead port the codes to <slower_framework> by duplicating and adjusting the code in the <slower_framework>.
 - Propose a multi-step high-level validation plan, where each step is a group of unit tests, and the steps go from lower-level code changes to higher-level. Ensure the following:
     - Full test code coverage, correctness and speed gains. 
+    - Ensure end-to-end tests for prefill-only, decode-only and mix of prefill-decode execution modes.
+    - Ensure end-to-end tests for cuda graph modes.
     - End-to-end tests that execute the modified/new code-paths by providing highest level input tensors and verifying output tensors (vs baseline or known previous versions). If necessary, instantiate the modified/new classes/objects with the prepare/finalize codes that are required.
     - If possible, reuse existing code pieces from <slower_framework> or <faster_framework>. 
+    - Ensure there are multiple tests inside each file, and if some fails, then do not run the tests separately, instead ensure they all pass together. For example, CUDA illegal memory access in the middle means that the code is incorrect, so fix it. Do not skip anything. This is critical for correctness.
 
 Finally:
 - Review the work here for issues, and fix them. Repeat the review 3 times or more till high confidence is reached.
@@ -168,7 +178,7 @@ The traces provided are only for pure decode operations (no prefill).
 - The file <plan_file> has a sequence of improvement steps for <slower_framework> based on the comparison between frameworks running the model <model> in precision <precision> on <gpu_type> GPU, with ISL <isl>, OSL <osl> and batch size <batch_size>.
 - The file <high_level_code_plan_file> has the multi-step high-level coding plan to apply the improvement <plan_step> to <slower_framework>.
 
-Generate a code patch for <slower_framework> that will apply the improvement <plan_step> from <plan_file> based on the multi-step high-level coding plan from <high_level_code_plan_file>. Do the following and think hard:
+The goal is to generate a code patch for <slower_framework> that will apply the improvement <plan_step> from <plan_file> based on the multi-step high-level coding plan from <high_level_code_plan_file>. Do the following and think hard:
 - Prefer to port code-pieces from <faster_framework> with minimal modifications to both frameworks, so that the correctness will be preserved and less new code will be generated. Ensure the ported code pieces are adjusted as necessary for <slower_framework> code structure.
 - If the code patch is too complex, then break down the problem to a sequence of small code patches. This will make code application and verification simpler.
 - For each code patch, write tests to verify correctness, coverage and speed gains. 
@@ -179,7 +189,9 @@ Generate a code patch for <slower_framework> that will apply the improvement <pl
     - Do not skip these important tests
     - There is no need to execute a full model for these tests, the goal is to instantiate the highest level classes/objects possible (ones that were modified or created), provide input tensors, and verify output tensors for correctness.
     - If possible, reuse existing test code pieces from <slower_framework>.
+    - Ensure to test many use-cases and edge-cases.
 - Do not skip any tests, and make sure all of them run correctly. If something fails, then fix the related issues.
+- Ensure all of the tests are part of the full patch and that all tests are added inside <slower_framework> in the related test sub-directories.
 
 Finally:
 - Apply the new code patches and tests
@@ -233,4 +245,136 @@ def gen_SmallPRsPrompt(
         code_gen_config=code_gen_config,
         high_level_code_plan_file=high_level_code_plan_file,
         output_file_prefix=PR_FILE_PREFIX,
+    )
+
+@dataclass
+class FixIssuePrompt:
+    claude_config: ClaudeConfig
+    code_gen_config: CodeGenConfig
+    high_level_code_plan_file: str
+    prs_dir: str
+    issue_to_fix_file: str
+    issue_cwd: str
+    prompt_template: ClassVar[str] = """
+<cwd> = {cwd}
+<issue_cwd> = {issue_cwd}
+
+<model> = {model}
+<precision> = {precision}
+<gpu_type> = {gpu_type}
+<batch_size> = {batch_size}
+<isl> = {isl}
+<osl> = {osl}
+<framework_names> = {framework_names}
+<framework_source_codes> = {framework_source_codes}
+<plan_file> = {plan_file}
+<plan_step> = {plan_step}
+<faster_framework> = {faster_framework}
+<slower_framework> = {slower_framework}
+<faster_framework_test_dir> = {faster_framework_test_dir}
+<slower_framework_test_dir> = {slower_framework_test_dir}
+<faster_transformer_block_high_level_ops_file> = {faster_transformer_block_high_level_ops_file}
+<slower_transformer_block_high_level_ops_file> = {slower_transformer_block_high_level_ops_file}
+<faster_median_transformer_block_file> = {faster_median_transformer_block_file}
+<slower_median_transformer_block_file> = {slower_median_transformer_block_file}
+<high_level_code_plan_file> = {high_level_code_plan_file}
+<prs_dir> = {prs_dir}
+<issue_to_fix_file> = {issue_to_fix_file}
+
+- <faster_transformer_block_high_level_ops_file> is a list of high-level transformer block operations of the faster framework.
+- <slower_transformer_block_high_level_ops_file> is a list of high-level transformer block operations of the slower framework.
+- <faster_median_transformer_block_file> is a median transformer block of the faster framework, with low-level kernel to high-level source code per-operation correlations. 
+- <slower_median_transformer_block_file> is a median transformer block of the slower framework, with low-level kernel to high-level source code per-operation correlations. 
+
+<test_id>=[model]-tp_$[num_gpus]-isl_[input_len]-osl_[output_len]
+<test_id_with_batch>=<test_id>-b_[concurrency]
+<full_test_id>=[framework]-<test_id_with_batch>
+
+The <faster_framework_test_dir> and <slower_framework_test_dir> are the test/profile/run-logs directories for the faster and slower framework respectively. Each directory has the following format (that encodes test parameters): ../<test_id_with_batch>/[framework], and it includes the following files:
+    - bench-<full_test_id>.json file that has the benchmark results of running the test on the framework
+    - run-log-<full_test_id>.txt file that has the run log of executing the framework
+    - run-log-profile-<full_test_id>.txt file that has the profile run log of executing the framework
+    - trace-<full_test_id>.nsys-rep file that has the NSYS profile results
+    - trace-<full_test_id>.sqlite file that is the SQLite version of the nsys-rep file	
+
+The traces provided are only for pure decode operations (no prefill).
+
+- <framework_names> is a list of framework names involved
+- <framework_source_codes> is a list of framework source codes that match respectively to <framework_names>
+- The file <plan_file> has a sequence of improvement steps for <slower_framework> based on the comparison between frameworks running the model <model> in precision <precision> on <gpu_type> GPU, with ISL <isl>, OSL <osl> and batch size <batch_size>.
+- The file <high_level_code_plan_file> has the multi-step high-level coding plan to apply the improvement <plan_step> to <slower_framework>.
+- Inside <prs_dir> directory are the code patches that implement the multi-step high-level coding plan from <high_level_code_plan_file> that applies the improvement <plan_step> to <slower_framework>.
+
+The goal of this task is to fix the issue described in <issue_to_fix_file> that happens after the code patches from <prs_dir> are applied to <slower_framework> source code (that is inside the related directory from <framework_source_codes>), and the new code is executed. Do the following and think hard:
+- Analyze and understand in-detail the issue <issue_to_fix>.
+- Detect and analyze in-detail the root causes that make issue <issue_to_fix> to appear in <slower_framework>. Ensure to correlate the findings here with the multi-step high-level coding plan from <high_level_code_plan_file>.
+- Detect and analyze in-detail the root causes that make issue <issue_to_fix> to NOT appear in <faster_framework>. Ensure to correlate the findings here with the multi-step high-level coding plan from <high_level_code_plan_file>.
+- Fix <slower_framework> code patches to remove the issue <issue_to_fix> with minimal changes to the code patches.
+- Strongly prefer to port fixes/ideas/code-pieces from <faster_framework> to fix issue <issue_to_fix> in <slower_framework>.
+- For the sequence of changes made to fix the issue, write a sequence of tests that verify each small step taken for correctness, and eventually verifying the full fix end-to-end as follows: 
+    - The sequence of tests must go from smaller low-level tests, to larger higher-level tests to gradually test the correctness. 
+    - Make sure everything passes, for prefill, decode and mix of prefill and decode executions. 
+    - Make sure to test cuda graph modes enabled with the new code-paths for full correctness. 
+    - Make sure to have a large end-to-end tests that compare vs baseline and test all possible modes of execution (prefill/decode, cuda graph and more). 
+    - Ensure the issue <issue_to_fix> is fixed in <slower_framework> with the new fix. 
+- Ensure all existing tests are still working. Run them and verify.
+- Review the new fixed code patches again for issues and fix anything necessary. Repeat the review multiple times till high confidence is reached.
+
+Finally:
+- Apply the new fixed code patches, run all of the tests (do NOT SKIP any tests), and verify all works and the issue is fixed.
+- Ensure there is more than 1 test inside each test file, and ensure that all of them pass when run together in one file. If there is an error due to CUDA illegal memory, then it means that the fix is incorrect. Do not try to run the tests separately. Make sure they pass all together while fixing the relevant issues.
+- Try to verify your changes by running a sequence of small tests that verify the sequence of small changes, that together compromise the full change. Be detailed, precise and ensure everything works.
+
+Output:
+- Dump a brief explanation of the fix applied to <issue_cwd>/issue_info.txt so a professional programmer can understand the fix applied here step-by-step.
+- Dump the sequence of new fixed small code patches to <issue_cwd>/<output_file_prefix>_[seq_id].patch
+- Dump the new fixed final full code patch to <issue_cwd>/<output_file_prefix>_full.patch  
+- Dump all new/fixed and old tests to <issue_cwd>/
+
+Do not modify any files inside <prs_dir>.
+
+"""
+
+    def prompt(self):
+        return self.prompt_template.format(
+            cwd=self.claude_config.cwd,
+            model=self.code_gen_config.model,
+            precision=self.code_gen_config.precision,
+            gpu_type=self.code_gen_config.gpu_type,
+            batch_size=self.code_gen_config.batch_size,
+            isl=self.code_gen_config.isl,
+            osl=self.code_gen_config.osl,
+            framework_names=self.code_gen_config.framework_names,
+            framework_source_codes=self.code_gen_config.framework_source_codes,
+            plan_file=self.code_gen_config.plan_file,
+            plan_step=self.code_gen_config.plan_step,
+            faster_framework=self.code_gen_config.faster_framework,
+            slower_framework=self.code_gen_config.slower_framework,
+            faster_framework_test_dir=self.code_gen_config.faster_framework_test_dir,
+            slower_framework_test_dir=self.code_gen_config.slower_framework_test_dir,
+            faster_transformer_block_high_level_ops_file=self.code_gen_config.faster_transformer_block_high_level_ops_file,
+            slower_transformer_block_high_level_ops_file=self.code_gen_config.slower_transformer_block_high_level_ops_file,
+            faster_median_transformer_block_file=self.code_gen_config.faster_median_transformer_block_file,
+            slower_median_transformer_block_file=self.code_gen_config.slower_median_transformer_block_file,
+            high_level_code_plan_file=self.high_level_code_plan_file,
+            prs_dir=self.prs_dir,
+            issue_to_fix_file=self.issue_to_fix_file,
+            issue_cwd=self.issue_cwd,
+        )
+
+def gen_FixIssuePrompt(
+    claude_config: ClaudeConfig,
+    code_gen_config: CodeGenConfig,
+    high_level_code_plan_file: str,
+    prs_dir: str,
+    issue_to_fix_file: str,
+    issue_cwd: str,
+):
+    return FixIssuePrompt(
+        claude_config=claude_config,
+        code_gen_config=code_gen_config,
+        high_level_code_plan_file=high_level_code_plan_file,
+        prs_dir=prs_dir,
+        issue_to_fix_file=issue_to_fix_file,
+        issue_cwd=issue_cwd,
     )
