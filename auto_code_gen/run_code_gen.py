@@ -15,6 +15,7 @@ from auto_code_gen.code_gen_prompts import (
     create_context_str,
     gen_CodeTracePrompt,
     gen_CodePortPlanPrompt,
+    gen_ReviewCodePortPlanPrompt,
 )
 
 LOG_FILE = "__run_log_code_gen.txt"
@@ -22,23 +23,34 @@ LOG_FILE = "__run_log_code_gen.txt"
 
 def gen_prompts():
     context = create_context_str(claude_config, code_gen_config)
+    frameworks = [SGLANG, VLLM]
 
     vllm_code_trace_prompt = gen_CodeTracePrompt(context=context, framework=VLLM)
     sglang_code_trace_prompt = gen_CodeTracePrompt(context=context, framework=SGLANG)
 
+    framework_code_trace_files = [
+        sglang_code_trace_prompt.output_file,
+        vllm_code_trace_prompt.output_file,
+    ]
+
     code_port_plan_prompt = gen_CodePortPlanPrompt(
         context=context,
-        frameworks=[SGLANG, VLLM],
-        framework_code_trace_files=[
-            sglang_code_trace_prompt.output_file,
-            vllm_code_trace_prompt.output_file,
-        ],
+        frameworks=frameworks,
+        framework_code_trace_files=framework_code_trace_files,
+    )
+
+    review_code_port_plan_prompt = gen_ReviewCodePortPlanPrompt(
+        context=context,
+        frameworks=frameworks,
+        framework_code_trace_files=framework_code_trace_files,
+        code_port_plan_file=code_port_plan_prompt.output_file,
     )
 
     prompts = [
         sglang_code_trace_prompt.prompt(),
         vllm_code_trace_prompt.prompt(),
         code_port_plan_prompt.prompt(),
+        review_code_port_plan_prompt.prompt(),
     ]
     return prompts
 

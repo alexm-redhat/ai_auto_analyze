@@ -183,12 +183,14 @@ class CodePortPlanPrompt:
 <instructions>
 The goal of this task is to provide a high-level multi-step coding plan that implements the improvement plan step <plan_step> (from <plan_file>) inside "target" framework by porting <code_trace> parts from the "source" framework to "target" framework. Think hard for this task and follow these guidelines:
 - Analyze and understand in-detail the code traces in <framework_code_trace_files>.
-- Detect <code_trace> parts of the "source" framework to port to "target" framework. Take into account the execution modes:
+- Detect <code_trace> parts of the "source" framework to port to "target" framework. Maximize the amount of parts that are ported AS IS with MINIMAL necessary changes to frameworks. Take into account the execution modes (and their effects on inputs/outputs/shapes and call-chains):
     - decode-only
     - prefill-only
     - mixed prefill and decode
+    - For each mode above, iterate over various sizes of tokens, including edge cases.
 - For each ported code part, ensure minimal changes to the part and minimal changes to the "target" framework. 
 - For each ported code part, if code adjustments are necessary due to "target" framework constraints, then try best to minimize these code adjustments as much as possible.
+- For each ported code part, provide step-by-step integration coding details into "target" framework. Make sure to take care of decode-only, prefill-only and mix execution modes correctly. 
 - For each ported code part, provide porting idea documentation, with what is ported, why, what is unchanged, and what is changed, and why. Be clear, concise and professional.
 - For any code part in "target" framework that is used here, ensure it is used correctly with the ported code parts. 
     - Verify inputs/outputs for all execution modes: decode, prefill, and mix
@@ -199,6 +201,7 @@ The goal of this task is to provide a high-level multi-step coding plan that imp
     - Verify API usage is fully correct and coherent
     - Verify the lowest level parts are used correctly
     - Inspect and trace all of the necessary source code points that are sensitive.
+- Provide risk analysis and potential sensitive breaking points
 </instructions>
 
 <output>
@@ -232,6 +235,109 @@ def gen_CodePortPlanPrompt(
         frameworks=frameworks,
         framework_code_trace_files=framework_code_trace_files,
         output_file="{}_from_{}_to_{}.txt".format(
+            CODE_PORT_PLAN_PREFIX, frameworks[0], frameworks[1]
+        ),
+    )
+
+@dataclass
+class ReviewCodePortPlanPrompt:
+    context: str
+    frameworks: list[str]
+    framework_code_trace_files: list[str]
+    code_port_plan_file: list[str]
+    output_file_1: str
+    output_file_2: str
+    prompt_template: ClassVar[str] = """
+
+{context}
+
+<definitions>
+<frameworks>
+{frameworks}
+</frameworks>
+<framework_code_trace_files>
+{framework_code_trace_files}
+</framework_code_trace_files>
+<code_port_plan_file>
+{code_port_plan_file}
+</code_port_plan_file>
+</definitions>
+
+<definition_explanations>
+- <frameworks> is a list of 2 frameworks, where the first framework is the "source" and the second is the "target". 
+- <framework_code_trace_files> is a list of code trace files for <frameworks> respectively. Each code trace file describes the <code_trace> of the specific framework that is active during the execution of <tested_execution> for improvement plan step <plan_step> (from <plan_file>).
+- <code_port_plan_file> is a file that describes the high-level multi-step coding plan that implements the improvement plan step <plan_step> (from <plan_file>) inside "target" framework.
+</definition_explanations>
+
+<instructions>
+The goal of this task is to perform a critical review of the high-level multi-step coding plan in <code_port_plan_file>. Do the following and think hard:
+- Understand in-detail the plan in <code_port_plan_file>, and restate the plan step-by-step.
+- Review the plan for:
+    - End-to-end execution modes: decode-only, prefill-only and mixed. Fully trace each execution, with inputs/outputs/shapes, assumptions, connections etc, to verify all is correct.
+    - Execution with cuda graph enabled
+    - If a low-level (or third party) kernel is invoked, then verify all input parameters and assumption of this kernel. Go deep and analyze kernel's source code as well, by fetching it from whether it is located.
+    - Ensure the plan fully implements the related improvement plan step, so that default execution will trigger it.
+    - Ensure proper memory management of CPU/GPU buffers
+    - Ensure proper scheduling constraints and separation between prefill/decode/mixed (if needed)
+    - Any other issue that is important for "target" framework integrity
+    - In general, these points too:
+        - incorrect assumptions
+        - missing steps
+        - bad ordering or sequencing
+        - ambiguity or vagueness
+        - missing edge cases
+        - architectural risks
+        - hidden dependencies
+        - places where the plan is not actionable enough
+        - places where validation/testing is missing
+        - places where the plan may solve the wrong problem
+        - places where the plan is too broad or too low-level
+        - any part that is not aligned with the original task or issue
+- For each issue found, document:
+    - The affected part of the plan
+    - What is wrong
+    - Why it matters
+    - How it should be improved
+- Produce a corrected plan with all issues fixed.
+
+</instructions>
+
+<output>
+- Dump the documentation of the issues fixed to <cwd>/{output_file_1}
+- Dump the corrected plan to <cwd>/{output_file_2}
+</output>
+
+"""
+
+    def prompt(self):
+        return self.prompt_template.format(
+            context=self.context,
+            frameworks=self.frameworks,
+            framework_code_trace_files=self.framework_code_trace_files,
+            code_port_plan_file=self.code_port_plan_file,
+            output_file_1=self.output_file_1,
+            output_file_2=self.output_file_2,
+        )
+
+
+def gen_ReviewCodePortPlanPrompt(
+    context: str,
+    frameworks: list[str],
+    framework_code_trace_files: list[str],
+    code_port_plan_file: str,
+):
+    assert len(frameworks) == 2
+    assert len(frameworks) == len(framework_code_trace_files)
+
+    return ReviewCodePortPlanPrompt(
+        context=context,
+        frameworks=frameworks,
+        framework_code_trace_files=framework_code_trace_files,
+        code_port_plan_file=code_port_plan_file,
+        output_file_1="{}_from_{}_to_{}_review_info.txt".format(
+            CODE_PORT_PLAN_PREFIX, frameworks[0], frameworks[1]
+        ),
+        output_file_2="{}_v2_from_{}_to_{}.txt".format(
             CODE_PORT_PLAN_PREFIX, frameworks[0], frameworks[1]
         ),
     )
