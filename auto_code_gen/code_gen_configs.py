@@ -44,6 +44,8 @@ PLAN_STEP = 1
 FASTER_FRAMEWORK = SGLANG
 SLOWER_FRAMEWORK = VLLM
 
+DISALLOWED_IMPORTS = ["sglang", "sgl_kernel", "sgl-attn", "sgl*"]
+
 FRAMEWORK_TEST_DIRS = [
     "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_profile/results/parse/test_results/deepseek-ai__DeepSeek-V3.2-tp_8-isl_4-osl_1024-b_1-mode_none/vllm",
     "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_profile/results/parse/test_results/deepseek-ai__DeepSeek-V3.2-tp_8-isl_4-osl_1024-b_1-mode_none/sgl",

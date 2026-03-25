@@ -18,6 +18,8 @@ from claude_agent_sdk import (
 
 from claude_agent_sdk.types import StreamEvent
 
+import utils #  # noqa: F401
+
 @dataclass
 class ClaudeConfig:
     model: str
@@ -162,6 +164,12 @@ async def claude_run(claude_config: ClaudeConfig, prompts: list[str]):
 
     async with ClaudeSDKClient(options=options) as client:
         for i, prompt in enumerate(prompts):
+            if isinstance(prompt, dict):
+                cmd = prompt["cmd"]
+                print("{} RUN CMD: {} {}".format(Fore.GREEN, cmd, Style.RESET_ALL))
+                eval(cmd)
+                continue
+            
             start_time = time.time()
 
             print("{} SEND QUERY PROMPT:{}".format(Fore.GREEN, Style.RESET_ALL))
