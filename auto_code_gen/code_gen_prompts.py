@@ -116,6 +116,9 @@ class CodeTracePrompt:
 The goal of this task is to detect the <code_trace> inside <framework> that is active during the execution of <tested_execution> for improvement plan step <plan_step> (from <plan_file>). Think hard for this task and follow these guidelines:
 - Analyze and understand in-detail the improvement plan step <plan_step> by inspecting all relevant files and data.
 - Detect the <code_trace> inside <framework> that is relevant for improvement plan step <plan_step>.
+    - Find all of the trace from higher levels to lower levels of the code
+    - Go deep, into the kernel source codes if needed, including the C/C++/CUDA source codes of the kernel, and the associated C/C++/python wrappers, including any third-party libraries. Do not miss anything.
+    - I.e find all of the relevant code pieces in the code that are relevant here and activated
 - For the detected <code_trace>, perform a detailed analysis of how exactly the <code_trace> executes for the following iteration modes:
     - decode-only runs
     - prefill-only runs
@@ -161,7 +164,7 @@ class CodePortPlanPrompt:
     context: str
     frameworks: list[str]
     framework_code_trace_files: list[str]
-    disallowed_imports: list[str]
+    disallowed_modules: list[str]
     previous_code_port_plan_attempt_file: str
     output_file: str
     prompt_template: ClassVar[str] = """
@@ -175,9 +178,9 @@ class CodePortPlanPrompt:
 <framework_code_trace_files>
 {framework_code_trace_files}
 </framework_code_trace_files>
-<disallowed_imports>
-{disallowed_imports}
-</disallowed_imports>
+<disallowed_modules>
+{disallowed_modules}
+</disallowed_modules>
 <previous_code_port_plan_attempt_file>
 {previous_code_port_plan_attempt_file}
 </previous_code_port_plan_attempt_file>
@@ -210,12 +213,15 @@ The goal of this task is to provide a high-level multi-step coding plan that imp
     - Verify inputs/outputs for all execution modes: decode, prefill, and mix
     - Verify all constraints and dependencies
 
-- For the porting process, if a kernel or module is needed from the "source", then strictly follow these guidelines:
-    - DO NOT DO direct imports of any of <disallowed_packages> inside the "target" framework.
-    - DO NOT USE *.so files, object files, or anything like that of any of <disallowed_packages> inside the "target" framework.
-    - If a third-party library/code is used by the "source" framework and it is needed for the porting, then it is ok to use this third-party library in the "target" framework (in a similar way to how it is used in the "source"). 
-    - For any related wrapper codes in the "source" framework, port them (copy-paste AS IS if possible) to the "target" framework, so they use the third-party library in a similar way to the "source".
-
+- For the porting process, if a faster kernel from the "source" framework is the reason for the speedups, then strictly follow these guidelines to copy-paste (vendor) the faster kernel to the "target" framework:
+    - DO NOT import or use any of the <disallowed_modules>
+    - Find faster kernel source codes on all levels:
+        - The full C/C++/CUDA source code with the associated compilation/flags process.
+        - C/C++/CUDA wrappers that are to propagate calls to the kernel.
+    - Analyze and understand in-depth how kernels are implemented in the "target" framework and reuse this logic for the porting process of the faster kernel.
+    - Copy-paste, vedor and re-implement this kernel in the "target" framework fully, including the C/C++/CUDA source code, compilation process, and its C/C++ and python wrappers. Make sure to copy-paste AS IS as much as possible to keep similar logic to the "source" framework. 
+    - If there is a similar kernel in the "target" framework already, then DO NOT REUSE IT. Instead, vendor and copy-paste the implementation as described above, since it is highly unlikely that the kernels are the same unless you can check the source codes and compare line by line.
+    
 - Ensure cuda graphs are handled properly for all execution modes
 - Ensure the end-to-end multi-step plan is coherent, bug-free and works for all execution modes:
     - Sanity and verify shapes of inputs/outputs
@@ -223,7 +229,10 @@ The goal of this task is to provide a high-level multi-step coding plan that imp
     - Verify the lowest level parts are used correctly
     - Inspect and trace all of the necessary source code points that are sensitive.
 
+- Ensure the new code in the "target" framework will run by default for the case that we care about.
+
 - Provide risk analysis and potential sensitive breaking points
+
 </instructions>
 
 <output>
@@ -237,7 +246,7 @@ The goal of this task is to provide a high-level multi-step coding plan that imp
             context=self.context,
             frameworks=self.frameworks,
             framework_code_trace_files=self.framework_code_trace_files,
-            disallowed_imports=self.disallowed_imports,
+            disallowed_modules=self.disallowed_modules,
             previous_code_port_plan_attempt_file=self.previous_code_port_plan_attempt_file,
             output_file=self.output_file,
         )
@@ -250,7 +259,7 @@ def gen_CodePortPlanPrompt(
     context: str,
     frameworks: list[str],
     framework_code_trace_files: list[str],
-    disallowed_imports: str,
+    disallowed_modules: list[str],
     previous_code_port_plan_attempt_file: str,
     output_file: str,
 ):
@@ -261,7 +270,7 @@ def gen_CodePortPlanPrompt(
         context=context,
         frameworks=frameworks,
         framework_code_trace_files=framework_code_trace_files,
-        disallowed_imports=disallowed_imports,
+        disallowed_modules=disallowed_modules,
         previous_code_port_plan_attempt_file=previous_code_port_plan_attempt_file,
         output_file=output_file,
     )
@@ -398,12 +407,15 @@ The goal of this task is to generate a high-level multi-step testing plan for th
 - Analyze and understand in-detail the high-level multi-step coding plan <code_port_plan_file>. Ensure to have a full understanding of the multi-step process, intended behaviors, features and implementation details.
 - Analyze and understand in-detail the tests in "source" framework that are relevant for the <code_port_plan_file>. Understand test structures, test code reuse patterns, baselines used, and main ideas used to implement these tests.
 - Analyze and understand in-detail the tests in "target" framework that are relevant for the <code_port_plan_file>. Understand test structures, test code reuse patterns, baselines used, and main ideas used to implement these tests.
-- Plan a sequence of high-level multi-step unit tests for the <code_port_plan_file> implementation. Ensure to cover execution modes: decode-only, prefill-only and mix. Also cover cuda graphs, and any input/output tensor behavior that is needed.
-- Plan a sequence of high-level end-to-end large tests for the <code_port_plan_file> implementation, which instantiate the highest level object possible (as related to the described changes), provide test input tensors, and verify the test outputs vs a known previous baseline for full correctness and sanity. This is an important test, and make sure to test:
-    - decode-only
-    - prefill-only
-    - mix
-    - cuda graphs
+- Plan a sequence of unit tests to verify small and large changes. Ensure to cover execution modes: decode-only, prefill-only and mix. Also cover cuda graphs, and any input/output tensor behavior that is needed.
+    - Provide FULL coverage.
+    - Provide edge case testing.
+    - And anything else that is critical to check for correctness and speed gains.
+- Plan a sequence of tests to verify the expected performance gains: 
+    - If a kernel was modified, then provide a kernel-level test to verify it is faster than before, with proper inputs/outputs and comparison vs known baseline.
+- Plan a sequence of end-to-end large tests for <code_port_plan_file> that test the whole change from <code_port_plan_file> end-to-end. 
+    - For the part of the transformer block that was modified, create this WHOLE part in the test and test it end-to-end for correctness and speed. Ensure to compare vs known baseline. Use existing tests to understand how to write this end-to-end test.
+    - Try a model (maybe a smaller version), and verify all executions modes and cuda graphs as well. 
 </instructions>
 
 <output>
@@ -485,24 +497,25 @@ class CodeGenPrompt:
 </definition_explanations>
 
 <instructions>
-The goal of this task is to generate a code patch for the "target" framework that implements the high-level multi-step coding plan in <code_port_plan_file> and the high-level multi-step testing plan in <test_plan_file>. Do the following and think hard:
+The goal of this task is to generate a code patch for the "target" framework that implements the coding plan in <code_port_plan_file> and the testing plan in <test_plan_file>. Do the following and think hard:
 - If <previous_code_gen_attempt_file> is provided and is an existing real file, then read and analyze in-detail its contents to get all of the information about the previous attempt to generate the code patch and its tests. Use all of the learnings and details from the previous attempt to improve the current attempt. Note that the current attempt is still done from scratch, but it can use the learnings from the previous attempt.
 - Analyze and understand in-detail the coding plan in <code_port_plan_file>
 - Analyze and understand in-detail the testing plan in <test_plan_file>
-- Dive deep into the details of the both plans to get full understanding and their correlations.
-- Proceed with the coding and testing implementations gradually and carefully, step-by-step, while verifying assumption and critical points via micro-tests. I.e. during the implementation process steps, there are assumptions and some critical code pieces that would make sense to verify as soon as possible before proceeding to the next implementation steps. For these, write small quick micro-tests to perform these verifications, run these tests immediately, and fix issues (if arise).
-- Make sure to take into account all execution modes and verify their <code_trace> inputs/outputs/shapes for:
-    - decode-only
-    - prefill-only
-    - mix
-- Apply the new code patch to "target" framework
-- Run all of the tests, do NOT SKIP anything, and make sure ALL TESTS ARE RUNNING AND PASSING . If there are failures, then fix, revisit, rewrite, and re-run everything again.
-- Make sure the end-to-end full integration tests are full, compare vs baseline, and exercise the new code properly with proper input and output tensors, while verifying edge cases, and decode-only, prefill-only and mixed execution modes.
-- Make sure to test cuda graphs and ensure correctness
-- Make sure to test edges cases
+- Implement the plans in <code_port_plan_file> and <test_plan_file> EXACTLY as they described:
+    - Follow strictly the code and test plans as described, DO NOT DIVERGE.
+    - If there is new (ported/vendored) C/C++/CUDA kernel code, then proceed on implementing the porting as planned, execute on it fully even it is really complex.
+    - Recompile the "target" when there are changes to C/C++/CUDA codes. Ensure re-compilation succeeds, else iterate and fix until full success. Do not skip this step.
+    - For recompile, USE INCREMENTAL compilation for the "target" by running the following commands (based on https://docs.vllm.ai/en/latest/contributing/incremental_build/):
+        1. python tools/generate_cmake_presets.py --force-overwrite
+        2. cmake --preset release
+        3. cmake --build --preset release --target install
+    - For recompile, use all available CPUs to make the process as fast as possible. 
+    - Avoid recompilation from scratch, and instead use the incremental compilation process described above.
+    - Make sure to take into account all execution modes and verify their <code_trace> inputs/outputs/shapes for decode-only, prefill-only and mixed.
+- Apply the new code patch to "target" framework, and if needed, fully re-compile the codebase.
+- Run all of the tests, do NOT SKIP anything, and make sure ALL TESTS ARE RUNNING AND PASSING (with the fully recompiled codebase if needed). If there are failures, then fix, revisit, rewrite, and re-run everything again.
+- Ensure the code, both main code and test code, is written professionally, clearly, well-documented, and well-formatted, while taking into account how code is written in the "target" framework.
 - Review your work critically and fix issues
-- Re-run tests as needed
-- If dependency is missing, then install it or find a workaround, DO NOT SKIP TESTING LOGIC => TEST EVERYTHING, ASSUME THERE ARE BUGS.
 </instructions>
 
 <output>
@@ -675,6 +688,322 @@ def gen_ReviewCodeGenPrompt(
         output_review_file=output_review_file,
         output_fixed_file=output_fixed_file,
         output_total_review_summary_file=output_total_review_summary_file,
+    )
+
+
+@dataclass
+class InvestigateIssuePrompt:
+    context: str
+    frameworks: list[str]
+    framework_code_trace_files: list[str]
+    code_port_plan_file: str
+    test_plan_file: str
+    code_port_plan_review_evolution_file: str
+    code_pr_info_file: str
+    code_pr_file: str
+    code_pr_review_evolution_file: str
+    issue_desc_file: str
+    issue_fix_previous_attempt_file: str
+    issue_fix_previous_attempt_review_evolution_file: str
+    issue_fix_file: str
+    code_pr_fixed_file: str
+    prompt_template: ClassVar[str] = """
+
+{context}
+
+<definitions>
+<frameworks>
+{frameworks}
+</frameworks>
+<framework_code_trace_files>
+{framework_code_trace_files}
+</framework_code_trace_files>
+<code_port_plan_file>
+{code_port_plan_file}
+</code_port_plan_file>
+<test_plan_file>
+{test_plan_file}
+</test_plan_file>
+<code_port_plan_review_evolution_file>
+{code_port_plan_review_evolution_file}
+</code_port_plan_review_evolution_file>
+<code_pr_info_file>
+{code_pr_info_file}
+</code_pr_info_file>
+<code_pr_file>
+{code_pr_file}
+</code_pr_file>
+<code_pr_review_evolution_file>
+{code_pr_review_evolution_file}
+</code_pr_review_evolution_file>
+<issue_desc_file>
+{issue_desc_file}
+</issue_desc_file>
+<issue_fix_previous_attempt_file>
+{issue_fix_previous_attempt_file}
+</issue_fix_previous_attempt_file>
+<issue_fix_previous_attempt_review_evolution_file>
+{issue_fix_previous_attempt_review_evolution_file}
+</issue_fix_previous_attempt_review_evolution_file>
+</definitions>
+
+<definition_explanations>
+- <frameworks> is a list of 2 frameworks, where the first framework is the "source" and the second is the "target". 
+- <framework_code_trace_files> is a list of code trace files for <frameworks> respectively. Each code trace file describes the <code_trace> of the specific framework that is active during the execution of <tested_execution> for improvement plan step <plan_step> (from <plan_file>).
+- <code_port_plan_file> is a file that describes the high-level multi-step coding plan that implements the improvement plan step <plan_step> (from <plan_file>) inside "target" framework.
+- <test_plan_file> is a file that describes the high-level multi-step testing plan for the implementation in <code_port_plan_file>.
+- <code_port_plan_review_evolution_file> describes the review evolution process during the code port plan => review generation iterations that lead to <code_port_plan_file>.
+- <code_pr_file> is the code patch for "target" framework that implements the coding plan in <code_port_plan_file> and the testing plan in <test_plan_file>. 
+- <code_pr_info_file> is a file that describes the <code_pr_file>
+- <code_pr_review_evolution_file> describes the review evolution process during the code => review generation iterations that lead to <code_pr_file>
+- <issue_desc_file> describes the issue that arises with the application of <code_pr_file> and needs to be investigated for a potential fix.
+</definition_explanations>
+
+<instructions>
+The goal of this task is to investigate the issue described in <issue_desc_file> that arises after the <code_pr_file> is applied to the "target" framework. Do the following and think hard:
+- If <issue_fix_previous_attempt_file> is provided and is an existing real file, then read and analyze in-detail this contents to get all of the information about the previous attempt to generate a fix to the issue described here. Use all of the learnings and details from the previous attempt to improve the current attempt. Note that the current attempt is still done from scratch, but it can use the learnings from the previous attempt.
+- If <issue_fix_previous_attempt_review_evolution_file> is provided and is an existing real file, then read and analyze in-detail this contents to get all of the information about the previous attempt to generate a fix to the issue described here. Use all of the learnings and details from the previous attempt to improve the current attempt. Note that the current attempt is still done from scratch, but it can use the learnings from the previous attempt.
+- Analyze and understand in-detail the code port plan in <code_port_plan_file>, and restate the code port plan process step-by-step.
+    - Analyze and understand in-detail the code port plan => review iteration evolution that is described in <code_port_plan_review_evolution_file> that lead to the final <code_port_plan_file>.
+- Analyze and understand in-detail the code patch in <code_pr_file>, and restate the coding process step-by-step.
+    - Analyze and understand in-detail the code gen => review iteration evolution that is described in <code_pr_review_evolution_file> that lead to the final <code_pr_file>.
+- Detect and analyze in-detail the root causes that make issue <issue_desc_file> to appear in "target" framework.
+- Detect and analyze in-detail the root causes that make issue <issue_desc_file> to NOT appear in "source" framework.
+- Dive deep into the source code of both frameworks, and their related third party libraries, to get full picture of the source code end-to-end as it related to the <code_trace> of both frameworks. 
+    - For example, if an external kernel is used, then find/fetch the source code of this kernel and trace all of the wrappers till this kernel is invoked. Make sure to find the actual full source code of the kernel. This is important.
+- Analyze and read any necessary extra information to get deeper understanding of the issue, including:
+    - run logs
+    - high level transformer blocks
+    - median transformer blocks that correlate low-level kernels to high-level source codes
+    - code port planning
+    - code pr and code pr info files
+    - third party library source codes and their wrappers, all of the way from high-level calls to lowest level function calls.
+    - Any related commits, their descriptions and more
+- Understand how to fix the issue in <issue_desc_file> and provide a detailed explanation of:
+    - Why it happens.
+    - What are the key reasons with source code references for both frameworks.    
+    - Steps to fix
+</instructions>
+
+<output>
+- Dump the detailed explanation of the issue, key reasons, and how to fix to <cwd>/{issue_fix_file}
+- Add new tests to verify that the issue is fully fixed.
+- Dump the fixed code pr patch with old and new tests to <cwd>/{code_pr_fixed_file}
+- Apply the new code patch to the "target" source code
+- Run the tests and ensure ALL PASS (NO SKIPS). If some test fails, then review the work, fix the issue again, and re-run again. DO NOT STOP UNTIL THE ISSUE IS FIXED.
+</output>
+
+"""
+
+    def prompt(self):
+        return self.prompt_template.format(
+            context=self.context,
+            frameworks=self.frameworks,
+            framework_code_trace_files=self.framework_code_trace_files,
+            code_port_plan_file=self.code_port_plan_file,
+            test_plan_file=self.test_plan_file,
+            code_port_plan_review_evolution_file=self.code_port_plan_review_evolution_file,
+            code_pr_info_file=self.code_pr_info_file,
+            code_pr_file=self.code_pr_file,
+            code_pr_review_evolution_file=self.code_pr_review_evolution_file,
+            issue_desc_file=self.issue_desc_file,
+            issue_fix_previous_attempt_file=self.issue_fix_previous_attempt_file,
+            issue_fix_previous_attempt_review_evolution_file=self.issue_fix_previous_attempt_review_evolution_file,
+            issue_fix_file=self.issue_fix_file,
+            code_pr_fixed_file=self.code_pr_fixed_file,
+        )
+
+
+def gen_InvestigateIssuePrompt(
+    context: str,
+    frameworks: list[str],
+    framework_code_trace_files: list[str],
+    code_port_plan_file: str,
+    test_plan_file: str,
+    code_port_plan_review_evolution_file: str,
+    code_pr_info_file: str,
+    code_pr_file: str,
+    code_pr_review_evolution_file: str,
+    issue_desc_file: str,
+    issue_fix_previous_attempt_file: str,
+    issue_fix_previous_attempt_review_evolution_file: str,
+    issue_fix_file: str,
+    code_pr_fixed_file: str,
+):
+    assert len(frameworks) == 2
+    assert len(frameworks) == len(framework_code_trace_files)
+
+    return InvestigateIssuePrompt(
+        context=context,
+        frameworks=frameworks,
+        framework_code_trace_files=framework_code_trace_files,
+        code_port_plan_file=code_port_plan_file,
+        test_plan_file=test_plan_file,
+        code_port_plan_review_evolution_file=code_port_plan_review_evolution_file,
+        code_pr_info_file=code_pr_info_file,
+        code_pr_file=code_pr_file,
+        code_pr_review_evolution_file=code_pr_review_evolution_file,
+        issue_desc_file=issue_desc_file,
+        issue_fix_previous_attempt_file=issue_fix_previous_attempt_file,
+        issue_fix_previous_attempt_review_evolution_file=issue_fix_previous_attempt_review_evolution_file,
+        issue_fix_file=issue_fix_file,
+        code_pr_fixed_file=code_pr_fixed_file,
+    )
+
+
+@dataclass
+class ReviewInvestigatedIssuePrompt:
+    context: str
+    frameworks: list[str]
+    framework_code_trace_files: list[str]
+    code_port_plan_file: str
+    test_plan_file: str
+    code_port_plan_review_evolution_file: str
+    code_pr_info_file: str
+    code_pr_file: str
+    code_pr_review_evolution_file: str
+    issue_desc_file: str
+    issue_fix_file: str
+    issue_fix_review_file: str
+    issue_fix_fixed_file: str
+    issue_fix_review_evolution_file: str
+    code_pr_review_fixed_file: str
+    prompt_template: ClassVar[str] = """
+
+{context}
+
+<definitions>
+<frameworks>
+{frameworks}
+</frameworks>
+<framework_code_trace_files>
+{framework_code_trace_files}
+</framework_code_trace_files>
+<code_port_plan_file>
+{code_port_plan_file}
+</code_port_plan_file>
+<test_plan_file>
+{test_plan_file}
+</test_plan_file>
+<code_port_plan_review_evolution_file>
+{code_port_plan_review_evolution_file}
+</code_port_plan_review_evolution_file>
+<code_pr_info_file>
+{code_pr_info_file}
+</code_pr_info_file>
+<code_pr_file>
+{code_pr_file}
+</code_pr_file>
+<code_pr_review_evolution_file>
+{code_pr_review_evolution_file}
+</code_pr_review_evolution_file>
+<issue_desc_file>
+{issue_desc_file}
+</issue_desc_file>
+<issue_fix_file>
+{issue_fix_file}
+</issue_fix_file>
+</definitions>
+
+<definition_explanations>
+- <frameworks> is a list of 2 frameworks, where the first framework is the "source" and the second is the "target". 
+- <framework_code_trace_files> is a list of code trace files for <frameworks> respectively. Each code trace file describes the <code_trace> of the specific framework that is active during the execution of <tested_execution> for improvement plan step <plan_step> (from <plan_file>).
+- <code_port_plan_file> is a file that describes the high-level multi-step coding plan that implements the improvement plan step <plan_step> (from <plan_file>) inside "target" framework.
+- <test_plan_file> is a file that describes the high-level multi-step testing plan for the implementation in <code_port_plan_file>.
+- <code_port_plan_review_evolution_file> describes the review evolution process during the code port plan => review generation iterations that lead to <code_port_plan_file>.
+- <code_pr_file> is the code patch for "target" framework that implements the coding plan in <code_port_plan_file> and the testing plan in <test_plan_file>. 
+- <code_pr_info_file> is a file that describes the <code_pr_file>
+- <code_pr_review_evolution_file> describes the review evolution process during the code => review generation iterations that lead to <code_pr_file>
+- <issue_desc_file> describes the issue that arises with the application of <code_pr_file> and needs to be investigated for a potential fix.
+- <issue_fix_file> describes the key reasons for the issue <issue_desc_file> and how to fix it.
+</definition_explanations>
+
+<instructions>
+The goal of this task is to perform a critical, in-depth review of issue fix in <issue_fix_file>. Do the following and think hard:
+- Analyze and understand in-detail the issue in <issue_desc_file> 
+- Analyze and understand in-detail the fix described in <issue_fix_file> for the issue <issue_desc_file>.
+- Review the issue fix for any:
+    - incorrect assumptions
+    - missing steps
+    - bad ordering or sequencing
+    - ambiguity or vagueness
+    - missing edge cases
+    - architectural risks
+    - hidden dependencies
+    
+- For each problem found, document:
+    - The affected part of the plan
+    - What is wrong
+    - Why it matters
+    - How it should be improved
+- Produce a corrected issue fix.
+</instructions>
+
+<output>
+- Dump the documentation of the fixes to the <issue_fix_file> to <cwd>/{issue_fix_review_file}
+- Dump the corrected issue fix to <cwd>/{issue_fix_fixed_file}
+- Dump the corrected code PR file to <cwd>/{code_pr_review_fixed_file}. For this add new tests if needed, apply the new patch, and re-run the tests.
+- If multiple issue investigation => review iterations were done till now, then summarize the iteration evolution in <cwd>/{issue_fix_review_evolution_file}
+</output>
+
+"""
+
+    def prompt(self):
+        return self.prompt_template.format(
+            context=self.context,
+            frameworks=self.frameworks,
+            framework_code_trace_files=self.framework_code_trace_files,
+            code_port_plan_file=self.code_port_plan_file,
+            test_plan_file=self.test_plan_file,
+            code_port_plan_review_evolution_file=self.code_port_plan_review_evolution_file,
+            code_pr_info_file=self.code_pr_info_file,
+            code_pr_file=self.code_pr_file,
+            code_pr_review_evolution_file=self.code_pr_review_evolution_file,
+            issue_desc_file=self.issue_desc_file,
+            issue_fix_file=self.issue_fix_file,
+            issue_fix_review_file=self.issue_fix_review_file,
+            issue_fix_fixed_file=self.issue_fix_fixed_file,
+            issue_fix_review_evolution_file=self.issue_fix_review_evolution_file,
+            code_pr_review_fixed_file=self.code_pr_review_fixed_file,
+        )
+
+
+def gen_ReviewInvestigatedIssuePrompt(
+    context: str,
+    frameworks: list[str],
+    framework_code_trace_files: list[str],
+    code_port_plan_file: str,
+    test_plan_file: str,
+    code_port_plan_review_evolution_file: str,
+    code_pr_info_file: str,
+    code_pr_file: str,
+    code_pr_review_evolution_file: str,
+    issue_desc_file: str,
+    issue_fix_file: str,
+    issue_fix_review_file: str,
+    issue_fix_fixed_file: str,
+    issue_fix_review_evolution_file: str,
+    code_pr_review_fixed_file: str,
+):
+    assert len(frameworks) == 2
+    assert len(frameworks) == len(framework_code_trace_files)
+
+    return ReviewInvestigatedIssuePrompt(
+        context=context,
+        frameworks=frameworks,
+        framework_code_trace_files=framework_code_trace_files,
+        code_port_plan_file=code_port_plan_file,
+        test_plan_file=test_plan_file,
+        code_port_plan_review_evolution_file=code_port_plan_review_evolution_file,
+        code_pr_info_file=code_pr_info_file,
+        code_pr_file=code_pr_file,
+        code_pr_review_evolution_file=code_pr_review_evolution_file,
+        issue_desc_file=issue_desc_file,
+        issue_fix_file=issue_fix_file,
+        issue_fix_review_file=issue_fix_review_file,
+        issue_fix_fixed_file=issue_fix_fixed_file,
+        issue_fix_review_evolution_file=issue_fix_review_evolution_file,
+        code_pr_review_fixed_file=code_pr_review_fixed_file,
     )
 
 

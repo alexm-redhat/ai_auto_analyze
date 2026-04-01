@@ -10,7 +10,7 @@ from auto_code_gen.code_gen_configs import (
     code_gen_config,
     VLLM,
     SGLANG,
-    DISALLOWED_IMPORTS,
+    DISALLOWED_MODULES,
 )
 
 from auto_code_gen.code_gen_prompts import (
@@ -46,7 +46,7 @@ def gen_prompts():
         vllm_code_trace_prompt.output_file,
     ]
 
-    num_plan_reviews = 5
+    num_plan_reviews = 4
     code_port_plan_and_review_prompts = []
     previous_code_port_plan_attempt_file = ""
     for i in range(num_plan_reviews):
@@ -60,7 +60,7 @@ def gen_prompts():
             context=context,
             frameworks=frameworks,
             framework_code_trace_files=framework_code_trace_files,
-            disallowed_imports=DISALLOWED_IMPORTS,
+            disallowed_modules=DISALLOWED_MODULES,
             previous_code_port_plan_attempt_file=previous_code_port_plan_attempt_file,
             output_file=code_port_plan_file,
         )
@@ -164,10 +164,10 @@ def gen_prompts():
     prompts = []
 
     prompts.append(clear_vllm_dir_cmd)
-    prompts.append(sglang_code_trace_prompt.prompt())
-    prompts.append(vllm_code_trace_prompt.prompt())
-    prompts.extend(code_port_plan_and_review_prompts)
-    prompts.append(test_plan_prompt.prompt())
+    # prompts.append(sglang_code_trace_prompt.prompt())
+    # prompts.append(vllm_code_trace_prompt.prompt())
+    # prompts.extend(code_port_plan_and_review_prompts)
+    # prompts.append(test_plan_prompt.prompt())
     prompts.extend(code_gen_and_review_prompts)
 
     return prompts
