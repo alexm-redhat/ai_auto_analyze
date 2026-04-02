@@ -10,7 +10,7 @@ from claude_utils import claude_run
 from auto_code_gen.code_gen_configs import claude_config, code_gen_config
 from auto_code_gen.code_gen_prompts import gen_FixIssuePrompt
 
-LOG_FILE = "__run_log_code_gen.txt"
+LOG_FILE = "__run_log_fix_issue.txt"
 
 
 def parse_args() -> argparse.Namespace:

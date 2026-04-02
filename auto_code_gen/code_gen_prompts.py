@@ -1006,6 +1006,158 @@ def gen_ReviewInvestigatedIssuePrompt(
         code_pr_review_fixed_file=code_pr_review_fixed_file,
     )
 
+@dataclass
+class SummarizeCodeGenProcessPrompt:
+    context: str
+    frameworks: list[str]
+    framework_code_trace_files: list[str]
+    code_port_plan_file: str
+    test_plan_file: str
+    code_port_plan_review_evolution_file: str
+    code_pr_info_file: str
+    code_pr_file: str
+    code_pr_review_evolution_file: str
+    issue_desc_files: list[str]
+    issue_fix_review_evolution_files: list[str]
+    output_file: str
+    prompt_template: ClassVar[str] = """
+
+{context}
+
+<definitions>
+<frameworks>
+{frameworks}
+</frameworks>
+<framework_code_trace_files>
+{framework_code_trace_files}
+</framework_code_trace_files>
+<code_port_plan_file>
+{code_port_plan_file}
+</code_port_plan_file>
+<test_plan_file>
+{test_plan_file}
+</test_plan_file>
+<code_port_plan_review_evolution_file>
+{code_port_plan_review_evolution_file}
+</code_port_plan_review_evolution_file>
+<code_pr_info_file>
+{code_pr_info_file}
+</code_pr_info_file>
+<code_pr_file>
+{code_pr_file}
+</code_pr_file>
+<code_pr_review_evolution_file>
+{code_pr_review_evolution_file}
+</code_pr_review_evolution_file>
+<issue_desc_files>
+{issue_desc_files}
+</issue_desc_files>
+<issue_fix_review_evolution_files>
+{issue_fix_review_evolution_files}
+</issue_fix_review_evolution_files>
+</definitions>
+
+<definition_explanations>
+- <frameworks> is a list of 2 frameworks, where the first framework is the "source" and the second is the "target". 
+- <framework_code_trace_files> is a list of code trace files for <frameworks> respectively. Each code trace file describes the <code_trace> of the specific framework that is active during the execution of <tested_execution> for improvement plan step <plan_step> (from <plan_file>).
+- <code_port_plan_file> is a file that describes the high-level multi-step coding plan that implements the improvement plan step <plan_step> (from <plan_file>) inside "target" framework.
+- <test_plan_file> is a file that describes the high-level multi-step testing plan for the implementation in <code_port_plan_file>.
+- <code_port_plan_review_evolution_file> describes the review evolution process during the code port plan => review generation iterations that lead to <code_port_plan_file>.
+- <code_pr_file> is the code patch for "target" framework that implements the coding plan in <code_port_plan_file> and the testing plan in <test_plan_file>. Note that this code patch also incorporates the fixes to the issues in <issue_desc_files>.
+- <code_pr_info_file> is a file that describes the <code_pr_file> in general (before the fixed issues)
+- <code_pr_review_evolution_file> describes the review evolution process during the code => review generation iterations that lead to <code_pr_file> (before the issues were fixed)
+- <issue_desc_files> is a list of files that describes the issues encountered that needed to be fixed after running a full DeepSeek V3.2 on 8 Hopper GPUs. All of them needed to be fixed to arrive to full correctness.
+- <issue_fix_review_evolution_files> describes the reviews that were applied to fixing the issues in <issue_desc_files>.
+</definition_explanations>
+
+<instructions>
+The goal of this task is to generate slides presentation of the code generation process that was executed to implement the improvement plan <plan_step> (from <plan_file>). Follow these guidelines and think hard:
+- The result of this process is a working code patch that is fully correct and provides end-to-end speedups of 16.6 percent for TPOT for the tested execution here. 
+- The key idea of the code generation is to port, or maximally copy-paste, code from the "source" framework to the "target" framework. I.e the code generation tries to avoid inventing new code and instead it is focused or porting codes from other places that are proven to work.
+- Analyze and understand in-depth the sequence of generated files in <cwd> during the code generation process. The general steps are as follows:
+    - Generate a code trace for the "source" framework, to get the call-chain of active code pieces (for the specific improvement step)
+    - Generate a code trace for the "target" framework, to get the call-chain of active code pieces (for the specific improvement step)
+    - Generate a code port plan from "source" to "target" framework that implements the improvement plan.
+        - The code port plan is done in iterations, where each iteration is "generate code port plan" => "review and fix"
+        - Learnings from previous iterations are used in the current iteration to improve the quality of the result and avoid bugs
+        - In general, the iteration-based generation is critical to provide a correct code port plan due to the complexity of the problem. It is highly unlikely that AI can generate a working code port plan from first shot, and it does need these iterations to fix bugs and issues before actually running the code. This iteration "evolution" is key for success.  
+    - Generate a test plan, from simple unit tests to larger end-to-end tests that are focused on critical things like: decode-only, prefill-only, mixed execution modes, cuda graphs support and more.
+    - Generate a the code patch based on the code port plan
+        - Here, we also apply the iterations to do "code gen" => "review" to fix issues and bugs. Also in this step, recompilation occurs and real tests are ran.
+    - After the code patch is done, the code was ran manually with the model <model> and a couple of issues, issue_1 and issue_2, where for each issue AI was used to fix the issue in the context of the previous generations. AI was able to fix these issues and after these fixes everything worked: has both correctness and speedups. 
+        - Describe the issues in general and how AI solved them
+
+- Make the presentation approachable for both high-level executives and expert programmers.
+- Make the presentation concise, professional and the code/real-world examples readable, clear and well-aligned.
+- Ensure the font, text, tables all aligned perfectly for good visibility and clarity.
+- Summarize all of the generation steps from above in slides presentation as follows (each bullet can be many as many slides as necessary):
+    - Project name, value proposition
+    - What is broken today, Why it matters
+    - High Level Solution, What we built, How it works at a high level
+    - Business impact, Time saved, Quality improvement, Strategic value
+    - Technical approach, Architecture, Key ideas and components
+    - Real-world example: the code generation example for the improvement step <plan_step> from above:
+        - For each step, show a concrete example result from the actual execution, so the reader can get an intuition of how each step result looks like. 
+        - Provide brief explanations so it will be clear what step is doing and how it connects to the flow, and also its key ideas that make it work.
+    - Risks, limitations, related work
+    - Closing, Key takeaway
+</instructions>
+
+
+<output>
+- Dump the resulting slides to <cwd>/{output_file}
+</output>
+
+"""
+    def prompt(self):
+        return self.prompt_template.format(
+            context=self.context,
+            frameworks=self.frameworks,
+            framework_code_trace_files=self.framework_code_trace_files,
+            code_port_plan_file=self.code_port_plan_file,
+            test_plan_file=self.test_plan_file,
+            code_port_plan_review_evolution_file=self.code_port_plan_review_evolution_file,
+            code_pr_info_file=self.code_pr_info_file,
+            code_pr_file=self.code_pr_file,
+            code_pr_review_evolution_file=self.code_pr_review_evolution_file,
+            issue_desc_files=self.issue_desc_files,
+            issue_fix_review_evolution_files=self.issue_fix_review_evolution_files,
+            output_file=self.output_file,
+        )
+
+
+def gen_SummarizeCodeGenProcessPrompt(
+    context: str,
+    frameworks: list[str],
+    framework_code_trace_files: list[str],
+    code_port_plan_file: str,
+    test_plan_file: str,
+    code_port_plan_review_evolution_file: str,
+    code_pr_info_file: str,
+    code_pr_file: str,
+    code_pr_review_evolution_file: str,
+    issue_desc_files: list[str],
+    issue_fix_review_evolution_files: list[str],
+    output_file: str,
+):
+    assert len(frameworks) == 2
+    assert len(frameworks) == len(framework_code_trace_files)
+
+    return SummarizeCodeGenProcessPrompt(
+        context=context,
+        frameworks=frameworks,
+        framework_code_trace_files=framework_code_trace_files,
+        code_port_plan_file=code_port_plan_file,
+        test_plan_file=test_plan_file,
+        code_port_plan_review_evolution_file=code_port_plan_review_evolution_file,
+        code_pr_info_file=code_pr_info_file,
+        code_pr_file=code_pr_file,
+        code_pr_review_evolution_file=code_pr_review_evolution_file,
+        issue_desc_files=issue_desc_files,
+        issue_fix_review_evolution_files=issue_fix_review_evolution_files,
+        output_file=output_file,
+    )
+
 
 # @dataclass
 # class HighLevelCodePlanPrompt:

@@ -14,7 +14,7 @@ from auto_code_gen.code_gen_prompts import (
     gen_ReviewInvestigatedIssuePrompt,
 )
 
-LOG_FILE = "__run_log_code_gen.txt"
+LOG_FILE = "__run_log_investigate_issue.txt"
 
 
 def parse_args() -> argparse.Namespace:
