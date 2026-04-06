@@ -60,6 +60,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Path to the code PR file.",
     )
+
     parser.add_argument(
         "--code-pr-review-evolution-file",
         required=True,
@@ -78,6 +79,13 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         required=True,
         help="Issue review evolution files.",
+    )
+
+    parser.add_argument(
+        "--auto-analyze-project-brief",
+        required=True,
+        type=Path,
+        help="Path to the auto-analyze presentation brief.",
     )
     parser.add_argument(
         "--output-file",
@@ -105,6 +113,7 @@ def gen_prompts(args):
         code_pr_review_evolution_file=args.code_pr_review_evolution_file,
         issue_desc_files=args.issue_desc_files,
         issue_fix_review_evolution_files=args.issue_fix_review_evolution_files,
+        auto_analyze_project_brief=args.auto_analyze_project_brief,
         output_file=args.output_file
     )
         

@@ -17,5 +17,6 @@ python -m auto_code_gen.run_summary \
     --code-pr-review-evolution-file $PRS_DIR/code_gen_V2_PR_TOTAL_REVIEW_EVOLUTION_from_sglang_to_vllm.txt \
     --issue-desc-files $PRS_DIR/issue_1.txt $PRS_DIR/issue_2.txt \
     --issue-fix-review-evolution-files $PRS_DIR/issue_1_research_fix_V3_REVIEW_EVOLUTION.txt $PRS_DIR/issue_2_research_fix_V3_REVIEW_EVOLUTION.txt \
-    --output-file summary_slides
+    --auto-analyze-project-brief /home/alexm-redhat/code/ai_auto_perf_analysis/auto_analyze_project_brief.pdf \
+    --output-file summary_slides.pptx
         

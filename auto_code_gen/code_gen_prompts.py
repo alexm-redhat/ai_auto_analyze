@@ -1006,6 +1006,150 @@ def gen_ReviewInvestigatedIssuePrompt(
         code_pr_review_fixed_file=code_pr_review_fixed_file,
     )
 
+# @dataclass
+# class SummarizeCodeGenProcessPrompt:
+#     context: str
+#     frameworks: list[str]
+#     framework_code_trace_files: list[str]
+#     code_port_plan_file: str
+#     test_plan_file: str
+#     code_port_plan_review_evolution_file: str
+#     code_pr_info_file: str
+#     code_pr_file: str
+#     code_pr_review_evolution_file: str
+#     issue_desc_files: list[str]
+#     issue_fix_review_evolution_files: list[str]
+#     auto_analyze_project_brief: str
+#     output_file: str
+#     prompt_template: ClassVar[str] = """
+
+# {context}
+
+# <definitions>
+# <frameworks>
+# {frameworks}
+# </frameworks>
+# <framework_code_trace_files>
+# {framework_code_trace_files}
+# </framework_code_trace_files>
+# <code_port_plan_file>
+# {code_port_plan_file}
+# </code_port_plan_file>
+# <test_plan_file>
+# {test_plan_file}
+# </test_plan_file>
+# <code_port_plan_review_evolution_file>
+# {code_port_plan_review_evolution_file}
+# </code_port_plan_review_evolution_file>
+# <code_pr_info_file>
+# {code_pr_info_file}
+# </code_pr_info_file>
+# <code_pr_file>
+# {code_pr_file}
+# </code_pr_file>
+# <code_pr_review_evolution_file>
+# {code_pr_review_evolution_file}
+# </code_pr_review_evolution_file>
+# <issue_desc_files>
+# {issue_desc_files}
+# </issue_desc_files>
+# <issue_fix_review_evolution_files>
+# {issue_fix_review_evolution_files}
+# </issue_fix_review_evolution_files>
+# <auto_analyze_project_brief>
+# {auto_analyze_project_brief}
+# </auto_analyze_project_brief>
+# </definitions>
+
+# <definition_explanations>
+# - <auto_analyze_project_brief> is a PDF file that summarizes the auto-analyze process that resulted in the improvement plan file <plan_file>
+# - <frameworks> is a list of 2 frameworks, where the first framework is the "source" and the second is the "target". 
+# - <framework_code_trace_files> is a list of code trace files for <frameworks> respectively. Each code trace file describes the <code_trace> of the specific framework that is active during the execution of <tested_execution> for improvement plan step <plan_step> (from <plan_file>).
+# - <code_port_plan_file> is a file that describes the high-level multi-step coding plan that implements the improvement plan step <plan_step> (from <plan_file>) inside "target" framework.
+# - <test_plan_file> is a file that describes the high-level multi-step testing plan for the implementation in <code_port_plan_file>.
+# - <code_port_plan_review_evolution_file> describes the review evolution process during the code port plan => review generation iterations that lead to <code_port_plan_file>.
+# - <code_pr_file> is the code patch for "target" framework that implements the coding plan in <code_port_plan_file> and the testing plan in <test_plan_file>. Note that this code patch also incorporates the fixes to the issues in <issue_desc_files>.
+# - <code_pr_info_file> is a file that describes the <code_pr_file> in general (before the fixed issues)
+# - <code_pr_review_evolution_file> describes the review evolution process during the code => review generation iterations that lead to <code_pr_file> (before the issues were fixed)
+# - <issue_desc_files> is a list of files that describes the issues encountered that needed to be fixed after running a full DeepSeek V3.2 on 8 Hopper GPUs. All of them needed to be fixed to arrive to full correctness.
+# - <issue_fix_review_evolution_files> describes the reviews that were applied to fixing the issues in <issue_desc_files>.
+
+# </definition_explanations>
+
+# <instructions>
+# The goal of this task is to generate a presentation that describes in-detail the AI-based automatic process that was used to generate the code patch <code_pr_file> that implements the improvement step <plan_step> from <plan_file>. Follow these guidelines and think hard:
+# - For this task we focus on the real-world example of the <tested_execution>
+# - The resulting code patch is fully correct and provides speedups.
+# - The AI-based automatic process is composed of:
+#     - The AI-based automatic profile and trace analysis that results in the improvement plan file <plan_file>. 
+#         - The file <auto_analyze_project_brief> describes this process in-detail with associated real-world example.
+#     - The AI-based automatic code generation that implements improvement step <plan_step> from the improvement plan file <plan_file> that results in the fully working and faster code.
+#         - The key idea of the code generation is to PORT, or maximally COPY-PASTE, code from the "source" framework to the "target" framework. I.e the code generation tries to avoid inventing new code and instead it is focused on porting codes from other places that are proven to work.
+
+# - Analyze and understand in-depth the AI-based automatic profile and trace analysis process that is described in: <auto_analyze_project_brief>.
+# - Analyze and understand in-depth the AI-based automatic code generation process that is composed of the sequence of generated files in <cwd>. Read all of these files and analyze their contents. In general, the auto-code-gen steps are as follows:
+#     - Generate a code trace for the "source" framework, to get the call-chain of active code pieces 
+#     - Generate a code trace for the "target" framework, to get the call-chain of active code pieces 
+#     - Generate a code port plan from "source" to "target" framework that implements the improvement plan.
+#         - The code port plan is done in iterations, where each iteration is "generate code port plan" => "review and fix"
+#         - Learnings from previous iterations are used in the current iteration to improve the quality of the result and avoid bugs
+#         - In general, the iteration-based generation is critical to provide a correct code port plan due to the complexity of the problem. It is highly unlikely that AI can generate a working code port plan from first shot, and it does need these iterations to fix bugs and issues before actually running the code. This iteration "evolution" is key for success.  
+#     - Generate a test plan, from simple unit tests to larger end-to-end tests that are focused on critical things like: decode-only, prefill-only, mixed execution modes, cuda graphs support and more.
+#     - Generate a the code patch based on the code port plan
+#         - Here, we also apply the iterations to do "code gen" => "review" to fix issues and bugs. Also in this step, recompilation occurs and real tests are ran.
+#     - After the code patch is done, the code was ran manually with the model <model> and a couple of issues, issue_1 and issue_2, where for each issue AI was used to fix the issue in the context of the previous generations. AI was able to fix these issues and after these fixes everything worked: has both correctness and speedups. 
+#         - Describe the issues in general and how AI solved them
+
+# - Generate a presentation that incorporates all of the learnings from previous analyses with the following order:
+#     - Explain the problem we try to solve and why its challenging and non-trivial.
+#     - Describe the high-level solution, key ideas and main architecture details.
+#     - Business impact of the AI-based automatic solution
+#     - Real-world example:
+#         - Show all AI-based steps, based on <auto_analyze_project_brief> and the code generation data inside <cwd>
+#         - Provide:
+#             - Transformer block details: low-level => high-level
+#             - Focus on the performance bottleneck part of the transformer block that relates to the improvement step <plan_step> that we tackle here. Explain it and highlight clearly relative to both frameworks
+#             - Show the actual <code_trace> of both frameworks with all necessary details to understand how the code port is planned.
+#             - Show the code port plan key ideas and steps:
+#                 - Explain the evolution via iterations of code_port_plan => review that results in fixing bugs and issues before actually running the code.
+#                     - For each iteration show what it fixed and how important it is. Provide actual details of errors/bugs/issues and their fixes, so it will be clear how important the evolution is
+#                     - The evolution is the way to get correctness since AI is not capable of generating correct code from first shot for complex tasks like this.
+#             - Show the code patch generation process which includes:
+#                 - Kernel porting details and complexities
+#                 - Incremental compilation usage to speedup the process and auto-fixing of issues step-by-step
+#                 - Testing plan and implementation: key areas and critical focus points that are important to test to avoid pitfalls (expert embedded knowledge)
+#                 - The evolution via iterations to get to high quality correct code + tests
+#             - Show the issue_1 and issue_2 that arised after end-to-end execution of the model <model> and how they were fixed via AI.
+#     - Summary
+
+# - Note that the presentation is intended for high-level executives and also for expert C/C++/CUDA/Python programmers.
+# - Note that we want the slides professional, clear, concise, but detailed enough to understand the intuitions and complexities of the AI-based process.
+# - Be creative and make the presentation great. This is a milestone for engineering since it shows that a real expert programmer work can be automated via AI.
+
+# </instructions>
+
+# <output>
+# - Dump the resulting PPTX presentation to <cwd>/{output_file}
+# </output>
+
+# """
+#     def prompt(self):
+#         return self.prompt_template.format(
+#             context=self.context,
+#             frameworks=self.frameworks,
+#             framework_code_trace_files=self.framework_code_trace_files,
+#             code_port_plan_file=self.code_port_plan_file,
+#             test_plan_file=self.test_plan_file,
+#             code_port_plan_review_evolution_file=self.code_port_plan_review_evolution_file,
+#             code_pr_info_file=self.code_pr_info_file,
+#             code_pr_file=self.code_pr_file,
+#             code_pr_review_evolution_file=self.code_pr_review_evolution_file,
+#             issue_desc_files=self.issue_desc_files,
+#             issue_fix_review_evolution_files=self.issue_fix_review_evolution_files,
+#             auto_analyze_project_brief=self.auto_analyze_project_brief,
+#             output_file=self.output_file,
+#         )
+
 @dataclass
 class SummarizeCodeGenProcessPrompt:
     context: str
@@ -1019,6 +1163,7 @@ class SummarizeCodeGenProcessPrompt:
     code_pr_review_evolution_file: str
     issue_desc_files: list[str]
     issue_fix_review_evolution_files: list[str]
+    auto_analyze_project_brief: str
     output_file: str
     prompt_template: ClassVar[str] = """
 
@@ -1055,9 +1200,13 @@ class SummarizeCodeGenProcessPrompt:
 <issue_fix_review_evolution_files>
 {issue_fix_review_evolution_files}
 </issue_fix_review_evolution_files>
+<auto_analyze_project_brief>
+{auto_analyze_project_brief}
+</auto_analyze_project_brief>
 </definitions>
 
 <definition_explanations>
+- <auto_analyze_project_brief> is a PDF file that summarizes the auto-analyze process that resulted in the improvement plan file <plan_file>
 - <frameworks> is a list of 2 frameworks, where the first framework is the "source" and the second is the "target". 
 - <framework_code_trace_files> is a list of code trace files for <frameworks> respectively. Each code trace file describes the <code_trace> of the specific framework that is active during the execution of <tested_execution> for improvement plan step <plan_step> (from <plan_file>).
 - <code_port_plan_file> is a file that describes the high-level multi-step coding plan that implements the improvement plan step <plan_step> (from <plan_file>) inside "target" framework.
@@ -1068,15 +1217,145 @@ class SummarizeCodeGenProcessPrompt:
 - <code_pr_review_evolution_file> describes the review evolution process during the code => review generation iterations that lead to <code_pr_file> (before the issues were fixed)
 - <issue_desc_files> is a list of files that describes the issues encountered that needed to be fixed after running a full DeepSeek V3.2 on 8 Hopper GPUs. All of them needed to be fixed to arrive to full correctness.
 - <issue_fix_review_evolution_files> describes the reviews that were applied to fixing the issues in <issue_desc_files>.
+
 </definition_explanations>
 
+<PPTX_formatting>
+Create a professional PowerPoint (.pptx) presentation for a highly technical audience of low-level GPU programmers, inference engineers, kernel/performance engineers, systems engineers, and experts in vLLM internals.
+
+Primary goal:
+Produce a deck that looks like it was made by a strong senior performance engineer with excellent technical judgment and good design sense. The presentation must be suitable for an internal deep-dive review of vLLM behavior, performance bottlenecks, kernel execution, scheduling behavior, memory movement, attention execution, and optimization opportunities.
+
+Audience assumptions:
+	•	The audience already understands LLM inference concepts, CUDA/GPU execution, model serving, and vLLM at a technical level
+	•	They care about correctness, performance methodology, kernel-level behavior, architecture tradeoffs, runtime overheads, and implementation details
+	•	They will quickly notice weak technical claims, shallow explanations, unreadable slides, cluttered layouts, imprecise terminology, and poorly formatted code or traces
+
+Desired tone and style:
+	•	Deep technical engineering presentation
+	•	Professional, clean, modern, understated
+	•	Not marketing-like
+	•	Visually polished, but optimized for technical clarity over decoration
+	•	Strong visual hierarchy, consistent formatting, clean spacing, and good contrast
+	•	The deck should look appropriate for a vLLM architecture review, performance review, or optimization deep dive
+
+Critical formatting requirements:
+	•	Generate the final output as a real .pptx file
+	•	Never use tiny fonts to make content fit
+	•	Minimum font sizes:
+	•	Slide titles: 28 pt or larger
+	•	Section headers / box headers: 20 pt or larger
+	•	Body bullets: 18 pt or larger
+	•	Text inside diagrams, trace views, tables, and annotations: 16 pt or larger
+	•	Code snippets: 16 pt or larger whenever possible
+	•	If content does not fit, do NOT shrink the font
+	•	Instead:
+	•	shorten visible text
+	•	split material across more slides
+	•	crop code snippets to the most relevant lines
+	•	simplify diagrams
+	•	move extra detail into speaker notes
+	•	The slides must remain comfortably readable during screen sharing and on a projected display
+
+Density rules:
+	•	Prefer more light slides over fewer dense slides
+	•	Each slide should communicate one main technical point
+	•	Avoid overloaded diagrams, overloaded code slides, or too many bullets
+	•	If a comparison becomes dense, split it into multiple progressive slides
+	•	If a trace or call chain is long, show only the relevant section and continue on the next slide
+	•	Prioritize readability and reasoning flow over compression
+
+vLLM-specific content expectations:
+Focus the presentation on the kinds of details that matter to vLLM experts, such as:
+	•	request lifecycle and scheduler behavior
+	•	prefill vs decode execution paths
+	•	paged attention behavior
+	•	KV cache structure, allocation, reuse, and movement
+	•	block management and memory fragmentation considerations
+	•	CUDA kernel launch behavior and kernel sequence
+	•	attention backend differences
+	•	communication overheads, tensor parallel behavior, and synchronization points
+	•	CPU overhead vs GPU bottlenecks
+	•	graph capture / cuda graph behavior where relevant
+	•	trace analysis, operator-level bottlenecks, and timeline interpretation
+	•	source-code-level explanations of important hot paths
+	•	comparisons across frameworks or execution modes when relevant
+	•	concrete optimization ideas and expected impact
+
+Slide content rules:
+	•	Be precise, technical, and concise
+	•	Avoid generic AI language, buzzwords, and fluff
+	•	Use exact engineering terminology where appropriate
+	•	Prefer short bullets over paragraphs
+	•	Maximum 4 bullets per slide unless the slide is primarily code, trace, or benchmark oriented
+	•	Every slide should have a clear technical takeaway
+	•	Do not invent metrics, code behavior, or implementation details that are not provided
+
+Preferred slide types:
+Use these kinds of slides where appropriate:
+	•	problem/context
+	•	request execution flow
+	•	prefill vs decode comparison
+	•	scheduler behavior walkthrough
+	•	KV cache / block manager explanation
+	•	call-chain comparison
+	•	code trace comparison
+	•	timeline / profiling view explanation
+	•	kernel sequence and hotspot analysis
+	•	focused code snippet walkthrough
+	•	bottleneck summary
+	•	optimization proposal
+	•	before/after benchmark comparison
+	•	tradeoffs / risks
+	•	next steps
+
+Requirements for code traces, call-chains, and timeline comparisons:
+	•	Use side-by-side layout when comparing two traces / paths / implementations
+	•	Clearly label the two sides
+	•	Align equivalent stages visually
+	•	Highlight only the important differences
+	•	Use color sparingly and purposefully to indicate:
+	•	added or removed steps
+	•	different kernels
+	•	bottlenecks
+	•	regressions or improvements
+	•	synchronization points
+	•	Add a short takeaway sentence on each comparison slide explaining the key difference
+	•	If the comparison is too dense, split it into multiple slides by subsystem or stage
+
+Requirements for code snippets:
+	•	Use short, focused snippets only
+	•	Crop to the most relevant functions, loops, branches, or call sites
+	•	Preserve indentation and readability
+	•	Add brief annotations explaining why the snippet matters
+	•	Highlight only the relevant lines
+	•	Do not place long code snippets and long prose on the same slide
+	•	If needed, use one slide for the snippet and a follow-up slide for explanation or performance implications
+
+Requirements for benchmarks and performance slides:
+	•	Present metrics clearly with simple charts or tables
+	•	Show before vs after where possible
+	•	Include throughput, latency, GPU utilization, CPU overhead, kernel time, memory effects, or other relevant low-level metrics when available
+	•	Make benchmark conditions explicit: model, batch/concurrency, input/output lengths, GPU type, framework/mode, and any important runtime flags
+	•	Do not hide methodology
+	•	Show caveats and tradeoffs where relevant
+
+Visual design rules:
+	•	Use a restrained professional color palette
+	•	Favor neutral backgrounds with strong text contrast
+	•	Use one primary accent color and one secondary accent color, plus neutrals
+	•	Use color to guide attention, not decorate
+	•	Avoid loud or overly saturated colors
+	•	Avoid decorative graphics that add no technical value
+	•	Prefer clean architecture/flow diagrams, comparison tables, and trace visuals over stock art or generic icons
+	•	Use whitespace intentionally, but do not leave large empty areas while the content itself is cramped
+</PPTX_formatting>
+
 <instructions>
-The goal of this task is to generate slides presentation of the code generation process that was executed to implement the improvement plan <plan_step> (from <plan_file>). Follow these guidelines and think hard:
-- The result of this process is a working code patch that is fully correct and provides end-to-end speedups of 16.6 percent for TPOT for the tested execution here. 
-- The key idea of the code generation is to port, or maximally copy-paste, code from the "source" framework to the "target" framework. I.e the code generation tries to avoid inventing new code and instead it is focused or porting codes from other places that are proven to work.
-- Analyze and understand in-depth the sequence of generated files in <cwd> during the code generation process. The general steps are as follows:
-    - Generate a code trace for the "source" framework, to get the call-chain of active code pieces (for the specific improvement step)
-    - Generate a code trace for the "target" framework, to get the call-chain of active code pieces (for the specific improvement step)
+The goal of this task is to generate a sequence of PPTX slides that describe the AI-based automatic code generation process that implemented improvement step <plan_step> from the <plan_file>. Do the following and think hard:
+- Analyze and understand in-depth the AI-based automatic code generation process that is composed of the sequence of generated files in <cwd>. Read all of these files in <cwd> and analyze their contents. The general steps are as follows:
+    - Generate a code trace for the "source" framework, to get the call-chain of active code pieces 
+    - Generate a code trace for the "target" framework, to get the call-chain of active code pieces 
     - Generate a code port plan from "source" to "target" framework that implements the improvement plan.
         - The code port plan is done in iterations, where each iteration is "generate code port plan" => "review and fix"
         - Learnings from previous iterations are used in the current iteration to improve the quality of the result and avoid bugs
@@ -1085,27 +1364,35 @@ The goal of this task is to generate slides presentation of the code generation 
     - Generate a the code patch based on the code port plan
         - Here, we also apply the iterations to do "code gen" => "review" to fix issues and bugs. Also in this step, recompilation occurs and real tests are ran.
     - After the code patch is done, the code was ran manually with the model <model> and a couple of issues, issue_1 and issue_2, where for each issue AI was used to fix the issue in the context of the previous generations. AI was able to fix these issues and after these fixes everything worked: has both correctness and speedups. 
-        - Describe the issues in general and how AI solved them
 
-- Make the presentation approachable for both high-level executives and expert programmers.
-- Make the presentation concise, professional and the code/real-world examples readable, clear and well-aligned.
-- Ensure the font, text, tables all aligned perfectly for good visibility and clarity.
-- Summarize all of the generation steps from above in slides presentation as follows (each bullet can be many as many slides as necessary):
-    - Project name, value proposition
-    - What is broken today, Why it matters
-    - High Level Solution, What we built, How it works at a high level
-    - Business impact, Time saved, Quality improvement, Strategic value
-    - Technical approach, Architecture, Key ideas and components
-    - Real-world example: the code generation example for the improvement step <plan_step> from above:
-        - For each step, show a concrete example result from the actual execution, so the reader can get an intuition of how each step result looks like. 
-        - Provide brief explanations so it will be clear what step is doing and how it connects to the flow, and also its key ideas that make it work.
-    - Risks, limitations, related work
-    - Closing, Key takeaway
+- Generate a sequence of PPTX slides as follows:
+    - A comparison one-to-one, on the same slide, of the code traces of both frameworks from <framework_code_trace_files>. Make sure to show:
+        - The full operation call-chains with all the necessary details, with the specific per-operation time breakdowns based on the median transformer blocks. 
+        - Explain the differences that can be seen in both the code traces and the transformer blocks, how the correlate and why the "target" is faster.
+    - Explain what needs to be done to port the "source" code pieces to the "target" codebase. Base the explanation on the code port plan file. Make sure to explain:
+        - Each critical code piece that is ported from the "source", what stays the same, what is changed, and how this code piece is integrated into the "target" codebase. Make sure to show actual code, and explain fully and clearly, so expert programmer can understand.
+    - Show and explain in-detail the Claude query prompt that is used to generate the code port plan, based on the source code here /home/alexm-redhat/code/ai_auto_perf_analysis/auto_code_gen/code_gen_prompts.py.
+    - Show and explain in-detail the Claude query prompt that is used to generate the code port plan review, based on the source code here /home/alexm-redhat/code/ai_auto_perf_analysis/auto_code_gen/code_gen_prompts.py.
+    - Show and explain in-detail the "code port plan" => "review" iterations that are used to fix bugs and issues before running the code:
+        - The key problem is that a code that is generated on first iteration is usually incorrect due to the complexity of the task, and the key idea to solve it is to use iterations to evolve the generated code to the point where it is fully correct. 
+        - Show each iteration (based on the files in <cwd>), what bugs/issues it found (in-detail), why it is important, and how it is fixed. This "gen" => "review" evolution flow is important to understand since it is the key for correctness.
+    - For code patch generation, same as for previous bullet:
+        - Show the generated code vs the iteration evolution process that fixes bugs and issues. Show each iterations, with what it found, why it is important and how it is fixed.
+    - Present the final pipeline of the process with all steps in a diagram, where "gen" => "review" is annotated properly with back arrows.
+    - Show the resulting code after code patch is applied in the "target"
+        - Show the new kernel components and compilation modifications
+        - Show the new/modified classes/functions and how they solve the previously detected issues that made "source" framework slower.
+        - Explain what is ported AS IS (copy-pasted) and what is the integration/amalgamation code.
+    - Show the correctness and performance improvement of 16-17 percent for TPOT. Correctnes was verified via lm_eval and this is the result:
+        |Tasks|Version|   Filter   |n-shot| Metric  |  |Value |  |Stderr|
+        |-----|------:|----------------|-----:|-----------|---|-----:|---|-----:|
+        |gsm8k|   3|flexible-extract|   5|exact_match|↑ |0.9545|± |0.0057|
+        |   |    |strict-match  |   5|exact_match|↑ |0.9553|± |0.0057|
+- Follow formatting in <PPTX_formatting>
 </instructions>
 
-
 <output>
-- Dump the resulting slides to <cwd>/{output_file}
+- Dump the resulting PPTX slides to <cwd>/{output_file}
 </output>
 
 """
@@ -1122,6 +1409,7 @@ The goal of this task is to generate slides presentation of the code generation 
             code_pr_review_evolution_file=self.code_pr_review_evolution_file,
             issue_desc_files=self.issue_desc_files,
             issue_fix_review_evolution_files=self.issue_fix_review_evolution_files,
+            auto_analyze_project_brief=self.auto_analyze_project_brief,
             output_file=self.output_file,
         )
 
@@ -1138,6 +1426,7 @@ def gen_SummarizeCodeGenProcessPrompt(
     code_pr_review_evolution_file: str,
     issue_desc_files: list[str],
     issue_fix_review_evolution_files: list[str],
+    auto_analyze_project_brief: str,
     output_file: str,
 ):
     assert len(frameworks) == 2
@@ -1155,6 +1444,7 @@ def gen_SummarizeCodeGenProcessPrompt(
         code_pr_review_evolution_file=code_pr_review_evolution_file,
         issue_desc_files=issue_desc_files,
         issue_fix_review_evolution_files=issue_fix_review_evolution_files,
+        auto_analyze_project_brief=auto_analyze_project_brief,
         output_file=output_file,
     )
 
