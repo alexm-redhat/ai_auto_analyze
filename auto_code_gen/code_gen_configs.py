@@ -40,7 +40,7 @@ SGLANG_CODE = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_code_gen/prs/s
 framework_source_codes = [VLLM_CODE, SGLANG_CODE]
 
 PLAN_FILE = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_analyze/results/vllm_sglang_trt_cmp_and_plan_summary.pdf"
-PLAN_STEP = 1
+PLAN_STEP = 2
 FASTER_FRAMEWORK = SGLANG
 SLOWER_FRAMEWORK = VLLM
 

@@ -164,10 +164,10 @@ def gen_prompts():
     prompts = []
 
     prompts.append(clear_vllm_dir_cmd)
-    # prompts.append(sglang_code_trace_prompt.prompt())
-    # prompts.append(vllm_code_trace_prompt.prompt())
-    # prompts.extend(code_port_plan_and_review_prompts)
-    # prompts.append(test_plan_prompt.prompt())
+    prompts.append(sglang_code_trace_prompt.prompt())
+    prompts.append(vllm_code_trace_prompt.prompt())
+    prompts.extend(code_port_plan_and_review_prompts)
+    prompts.append(test_plan_prompt.prompt())
     prompts.extend(code_gen_and_review_prompts)
 
     return prompts

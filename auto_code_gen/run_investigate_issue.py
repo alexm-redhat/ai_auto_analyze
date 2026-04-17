@@ -16,6 +16,7 @@ from auto_code_gen.code_gen_prompts import (
 
 LOG_FILE = "__run_log_investigate_issue.txt"
 
+NUM_ITERS = 2
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Investigate issue in PR")
@@ -93,7 +94,7 @@ def gen_prompts(args):
     code_pr_file_prefix = str(args.code_pr_file).strip(".patch")
 
     prompts = []
-    num_reviews = 3
+    num_reviews = NUM_ITERS
     issue_fix_previous_attempt_file = ""
     issue_fix_previous_attempt_review_evolution_file = ""
     code_pr_file_prev = args.code_pr_file
@@ -157,9 +158,9 @@ def gen_prompts(args):
             issue_fix_review_evolution_file
         )
 
-        prompts.append(clear_vllm_dir_cmd)
+        # prompts.append(clear_vllm_dir_cmd)
         prompts.append(investigate_issue_prompt.prompt())
-        prompts.append(clear_vllm_dir_cmd)
+        # prompts.append(clear_vllm_dir_cmd)
         prompts.append(review_investigated_issue_prompt.prompt())
 
     return prompts

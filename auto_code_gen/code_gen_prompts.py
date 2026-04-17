@@ -403,19 +403,21 @@ class TestPlanPrompt:
 </definition_explanations>
 
 <instructions>
-The goal of this task is to generate a high-level multi-step testing plan for the implementation described in <code_port_plan_file>. Do the following and think hard:
-- Analyze and understand in-detail the high-level multi-step coding plan <code_port_plan_file>. Ensure to have a full understanding of the multi-step process, intended behaviors, features and implementation details.
-- Analyze and understand in-detail the tests in "source" framework that are relevant for the <code_port_plan_file>. Understand test structures, test code reuse patterns, baselines used, and main ideas used to implement these tests.
-- Analyze and understand in-detail the tests in "target" framework that are relevant for the <code_port_plan_file>. Understand test structures, test code reuse patterns, baselines used, and main ideas used to implement these tests.
+The goal of this task is to generate a multi-step testing plan for the implementation described in <code_port_plan_file>. Do the following and think hard:
+- Analyze and understand in-detail the coding plan in <code_port_plan_file>. Ensure to have a full understanding of the multi-step process, intended behaviors, features and implementation details.
+- Analyze and understand in-detail the tests in "source" framework that are relevant for the <code_port_plan_file>, and the associated <code_trace> call-chains, params etc...
+- Analyze and understand in-detail the tests in "target" framework that are relevant for the <code_port_plan_file> and the associated <code_trace> call-chains, params etc...
+- For both frameworks, understand test structures, test code reuse patterns, baselines used, and main ideas used to implement these tests. Dive deep into details to get a good understanding of how testing works.
 - Plan a sequence of unit tests to verify small and large changes. Ensure to cover execution modes: decode-only, prefill-only and mix. Also cover cuda graphs, and any input/output tensor behavior that is needed.
     - Provide FULL coverage.
     - Provide edge case testing.
     - And anything else that is critical to check for correctness and speed gains.
+- Plan a sequence of end-to-end tests for <code_port_plan_file> that test the whole change from <code_port_plan_file> end-to-end. 
+    - For the logical part of the transformer block that was modified, create this WHOLE part in the test with relevant classes/objects/functions, and test it end-to-end for correctness and speed gains. Ensure to compare vs known baseline. 
+    - Make sure to have a test that actually runs a model (maybe a smaller version of <model>) and verifies it works.
 - Plan a sequence of tests to verify the expected performance gains: 
     - If a kernel was modified, then provide a kernel-level test to verify it is faster than before, with proper inputs/outputs and comparison vs known baseline.
-- Plan a sequence of end-to-end large tests for <code_port_plan_file> that test the whole change from <code_port_plan_file> end-to-end. 
-    - For the part of the transformer block that was modified, create this WHOLE part in the test and test it end-to-end for correctness and speed. Ensure to compare vs known baseline. Use existing tests to understand how to write this end-to-end test.
-    - Try a model (maybe a smaller version), and verify all executions modes and cuda graphs as well. 
+    - Otherwise, plan the relevant minimal test to verify speed gains exist vs a known baseline.
 </instructions>
 
 <output>
@@ -763,6 +765,7 @@ class InvestigateIssuePrompt:
 The goal of this task is to investigate the issue described in <issue_desc_file> that arises after the <code_pr_file> is applied to the "target" framework. Do the following and think hard:
 - If <issue_fix_previous_attempt_file> is provided and is an existing real file, then read and analyze in-detail this contents to get all of the information about the previous attempt to generate a fix to the issue described here. Use all of the learnings and details from the previous attempt to improve the current attempt. Note that the current attempt is still done from scratch, but it can use the learnings from the previous attempt.
 - If <issue_fix_previous_attempt_review_evolution_file> is provided and is an existing real file, then read and analyze in-detail this contents to get all of the information about the previous attempt to generate a fix to the issue described here. Use all of the learnings and details from the previous attempt to improve the current attempt. Note that the current attempt is still done from scratch, but it can use the learnings from the previous attempt.
+- Read, analyze and understand in-detail all previous issues that were reported and are in the <cwd>. These are may be relevant to avoid repeating mistakes, bugs or misleading information. Take all of the learning of previous issues into account while working on this issue from scratch.
 - Analyze and understand in-detail the code port plan in <code_port_plan_file>, and restate the code port plan process step-by-step.
     - Analyze and understand in-detail the code port plan => review iteration evolution that is described in <code_port_plan_review_evolution_file> that lead to the final <code_port_plan_file>.
 - Analyze and understand in-detail the code patch in <code_pr_file>, and restate the coding process step-by-step.
@@ -1006,149 +1009,70 @@ def gen_ReviewInvestigatedIssuePrompt(
         code_pr_review_fixed_file=code_pr_review_fixed_file,
     )
 
-# @dataclass
-# class SummarizeCodeGenProcessPrompt:
-#     context: str
-#     frameworks: list[str]
-#     framework_code_trace_files: list[str]
-#     code_port_plan_file: str
-#     test_plan_file: str
-#     code_port_plan_review_evolution_file: str
-#     code_pr_info_file: str
-#     code_pr_file: str
-#     code_pr_review_evolution_file: str
-#     issue_desc_files: list[str]
-#     issue_fix_review_evolution_files: list[str]
-#     auto_analyze_project_brief: str
-#     output_file: str
-#     prompt_template: ClassVar[str] = """
 
-# {context}
+@dataclass
+class WorkItemsPrompt:
+    context: str
+    code_gen_dir: str
+    work_items_file: str
+    prompt_template: ClassVar[str] = """
 
-# <definitions>
-# <frameworks>
-# {frameworks}
-# </frameworks>
-# <framework_code_trace_files>
-# {framework_code_trace_files}
-# </framework_code_trace_files>
-# <code_port_plan_file>
-# {code_port_plan_file}
-# </code_port_plan_file>
-# <test_plan_file>
-# {test_plan_file}
-# </test_plan_file>
-# <code_port_plan_review_evolution_file>
-# {code_port_plan_review_evolution_file}
-# </code_port_plan_review_evolution_file>
-# <code_pr_info_file>
-# {code_pr_info_file}
-# </code_pr_info_file>
-# <code_pr_file>
-# {code_pr_file}
-# </code_pr_file>
-# <code_pr_review_evolution_file>
-# {code_pr_review_evolution_file}
-# </code_pr_review_evolution_file>
-# <issue_desc_files>
-# {issue_desc_files}
-# </issue_desc_files>
-# <issue_fix_review_evolution_files>
-# {issue_fix_review_evolution_files}
-# </issue_fix_review_evolution_files>
-# <auto_analyze_project_brief>
-# {auto_analyze_project_brief}
-# </auto_analyze_project_brief>
-# </definitions>
+{context}
 
-# <definition_explanations>
-# - <auto_analyze_project_brief> is a PDF file that summarizes the auto-analyze process that resulted in the improvement plan file <plan_file>
-# - <frameworks> is a list of 2 frameworks, where the first framework is the "source" and the second is the "target". 
-# - <framework_code_trace_files> is a list of code trace files for <frameworks> respectively. Each code trace file describes the <code_trace> of the specific framework that is active during the execution of <tested_execution> for improvement plan step <plan_step> (from <plan_file>).
-# - <code_port_plan_file> is a file that describes the high-level multi-step coding plan that implements the improvement plan step <plan_step> (from <plan_file>) inside "target" framework.
-# - <test_plan_file> is a file that describes the high-level multi-step testing plan for the implementation in <code_port_plan_file>.
-# - <code_port_plan_review_evolution_file> describes the review evolution process during the code port plan => review generation iterations that lead to <code_port_plan_file>.
-# - <code_pr_file> is the code patch for "target" framework that implements the coding plan in <code_port_plan_file> and the testing plan in <test_plan_file>. Note that this code patch also incorporates the fixes to the issues in <issue_desc_files>.
-# - <code_pr_info_file> is a file that describes the <code_pr_file> in general (before the fixed issues)
-# - <code_pr_review_evolution_file> describes the review evolution process during the code => review generation iterations that lead to <code_pr_file> (before the issues were fixed)
-# - <issue_desc_files> is a list of files that describes the issues encountered that needed to be fixed after running a full DeepSeek V3.2 on 8 Hopper GPUs. All of them needed to be fixed to arrive to full correctness.
-# - <issue_fix_review_evolution_files> describes the reviews that were applied to fixing the issues in <issue_desc_files>.
+<definitions>
+<code_gen_dir>
+{code_gen_dir}
+</code_gen_dir>
+<work_items_file>
+{work_items_file}
+</work_items_file>
+</definitions>
 
-# </definition_explanations>
+<definition_explanations>
+- <code_gen_dir> is a directory that holds the results of the code generation process that implemented <plan_step> (from <plan_file>) inside "target" framework. This directory includes:
+    - Framework code traces
+    - code port plan with review iterations
+    - code generation with review iterations
+    - issue fixing sequences
+</definition_explanations>
 
-# <instructions>
-# The goal of this task is to generate a presentation that describes in-detail the AI-based automatic process that was used to generate the code patch <code_pr_file> that implements the improvement step <plan_step> from <plan_file>. Follow these guidelines and think hard:
-# - For this task we focus on the real-world example of the <tested_execution>
-# - The resulting code patch is fully correct and provides speedups.
-# - The AI-based automatic process is composed of:
-#     - The AI-based automatic profile and trace analysis that results in the improvement plan file <plan_file>. 
-#         - The file <auto_analyze_project_brief> describes this process in-detail with associated real-world example.
-#     - The AI-based automatic code generation that implements improvement step <plan_step> from the improvement plan file <plan_file> that results in the fully working and faster code.
-#         - The key idea of the code generation is to PORT, or maximally COPY-PASTE, code from the "source" framework to the "target" framework. I.e the code generation tries to avoid inventing new code and instead it is focused on porting codes from other places that are proven to work.
+<instructions>
+The goal of this task is to execute the work items that are described in <work_items_file>. Do the following and think hard:
+- Read all result files in <code_gen_dir> to get a detailed understanding of the implementation process that occured. Understand everything in great detail, and take all the learnings from the review evolutions and the issue fixing processes that were executed.
+- Read the "context section"
+- Read the "work_items section"
+- Execute the work one by one. For each work item:
+    - Find, analyze and understand in-depth any relevant data that will help to execute the work item. Be very thorough.
+    - If the work item is complex, split to smaller steps, execute each one and verify before proceeding to next step.
+    - Do final verification that the step completed successfully. Perform a critical review and fix issues.
+</instructions>
 
-# - Analyze and understand in-depth the AI-based automatic profile and trace analysis process that is described in: <auto_analyze_project_brief>.
-# - Analyze and understand in-depth the AI-based automatic code generation process that is composed of the sequence of generated files in <cwd>. Read all of these files and analyze their contents. In general, the auto-code-gen steps are as follows:
-#     - Generate a code trace for the "source" framework, to get the call-chain of active code pieces 
-#     - Generate a code trace for the "target" framework, to get the call-chain of active code pieces 
-#     - Generate a code port plan from "source" to "target" framework that implements the improvement plan.
-#         - The code port plan is done in iterations, where each iteration is "generate code port plan" => "review and fix"
-#         - Learnings from previous iterations are used in the current iteration to improve the quality of the result and avoid bugs
-#         - In general, the iteration-based generation is critical to provide a correct code port plan due to the complexity of the problem. It is highly unlikely that AI can generate a working code port plan from first shot, and it does need these iterations to fix bugs and issues before actually running the code. This iteration "evolution" is key for success.  
-#     - Generate a test plan, from simple unit tests to larger end-to-end tests that are focused on critical things like: decode-only, prefill-only, mixed execution modes, cuda graphs support and more.
-#     - Generate a the code patch based on the code port plan
-#         - Here, we also apply the iterations to do "code gen" => "review" to fix issues and bugs. Also in this step, recompilation occurs and real tests are ran.
-#     - After the code patch is done, the code was ran manually with the model <model> and a couple of issues, issue_1 and issue_2, where for each issue AI was used to fix the issue in the context of the previous generations. AI was able to fix these issues and after these fixes everything worked: has both correctness and speedups. 
-#         - Describe the issues in general and how AI solved them
+<output>
+- Read the "output section" from <work_items_file> and generate the outputs based on that.
+</output>
 
-# - Generate a presentation that incorporates all of the learnings from previous analyses with the following order:
-#     - Explain the problem we try to solve and why its challenging and non-trivial.
-#     - Describe the high-level solution, key ideas and main architecture details.
-#     - Business impact of the AI-based automatic solution
-#     - Real-world example:
-#         - Show all AI-based steps, based on <auto_analyze_project_brief> and the code generation data inside <cwd>
-#         - Provide:
-#             - Transformer block details: low-level => high-level
-#             - Focus on the performance bottleneck part of the transformer block that relates to the improvement step <plan_step> that we tackle here. Explain it and highlight clearly relative to both frameworks
-#             - Show the actual <code_trace> of both frameworks with all necessary details to understand how the code port is planned.
-#             - Show the code port plan key ideas and steps:
-#                 - Explain the evolution via iterations of code_port_plan => review that results in fixing bugs and issues before actually running the code.
-#                     - For each iteration show what it fixed and how important it is. Provide actual details of errors/bugs/issues and their fixes, so it will be clear how important the evolution is
-#                     - The evolution is the way to get correctness since AI is not capable of generating correct code from first shot for complex tasks like this.
-#             - Show the code patch generation process which includes:
-#                 - Kernel porting details and complexities
-#                 - Incremental compilation usage to speedup the process and auto-fixing of issues step-by-step
-#                 - Testing plan and implementation: key areas and critical focus points that are important to test to avoid pitfalls (expert embedded knowledge)
-#                 - The evolution via iterations to get to high quality correct code + tests
-#             - Show the issue_1 and issue_2 that arised after end-to-end execution of the model <model> and how they were fixed via AI.
-#     - Summary
+"""
 
-# - Note that the presentation is intended for high-level executives and also for expert C/C++/CUDA/Python programmers.
-# - Note that we want the slides professional, clear, concise, but detailed enough to understand the intuitions and complexities of the AI-based process.
-# - Be creative and make the presentation great. This is a milestone for engineering since it shows that a real expert programmer work can be automated via AI.
+    def prompt(self):
+        return self.prompt_template.format(
+            context=self.context,
+            code_gen_dir=self.code_gen_dir,
+            work_items_file=self.work_items_file,
+        )
 
-# </instructions>
 
-# <output>
-# - Dump the resulting PPTX presentation to <cwd>/{output_file}
-# </output>
+def gen_WorkItemsPrompt(
+    context: str,
+    code_gen_dir: str,
+    work_items_file: str,
+):
 
-# """
-#     def prompt(self):
-#         return self.prompt_template.format(
-#             context=self.context,
-#             frameworks=self.frameworks,
-#             framework_code_trace_files=self.framework_code_trace_files,
-#             code_port_plan_file=self.code_port_plan_file,
-#             test_plan_file=self.test_plan_file,
-#             code_port_plan_review_evolution_file=self.code_port_plan_review_evolution_file,
-#             code_pr_info_file=self.code_pr_info_file,
-#             code_pr_file=self.code_pr_file,
-#             code_pr_review_evolution_file=self.code_pr_review_evolution_file,
-#             issue_desc_files=self.issue_desc_files,
-#             issue_fix_review_evolution_files=self.issue_fix_review_evolution_files,
-#             auto_analyze_project_brief=self.auto_analyze_project_brief,
-#             output_file=self.output_file,
-#         )
+    return WorkItemsPrompt(
+        context=context,
+        code_gen_dir=code_gen_dir,
+        work_items_file=work_items_file,
+    )
+
 
 @dataclass
 class SummarizeCodeGenProcessPrompt:
@@ -1396,6 +1320,7 @@ The goal of this task is to generate a sequence of PPTX slides that describe the
 </output>
 
 """
+
     def prompt(self):
         return self.prompt_template.format(
             context=self.context,
@@ -1447,382 +1372,3 @@ def gen_SummarizeCodeGenProcessPrompt(
         auto_analyze_project_brief=auto_analyze_project_brief,
         output_file=output_file,
     )
-
-
-# @dataclass
-# class HighLevelCodePlanPrompt:
-#     claude_config: ClaudeConfig
-#     code_gen_config: CodeGenConfig
-#     output_file: str
-#     prompt_template: ClassVar[str] = """
-# <cwd> = {cwd}
-
-# <model> = {model}
-# <precision> = {precision}
-# <gpu_type> = {gpu_type}
-# <batch_size> = {batch_size}
-# <isl> = {isl}
-# <osl> = {osl}
-# <framework_names> = {framework_names}
-# <framework_source_codes> = {framework_source_codes}
-# <plan_file> = {plan_file}
-# <plan_step> = {plan_step}
-# <faster_framework> = {faster_framework}
-# <slower_framework> = {slower_framework}
-# <faster_framework_test_dir> = {faster_framework_test_dir}
-# <slower_framework_test_dir> = {slower_framework_test_dir}
-# <faster_transformer_block_high_level_ops_file> = {faster_transformer_block_high_level_ops_file}
-# <slower_transformer_block_high_level_ops_file> = {slower_transformer_block_high_level_ops_file}
-# <faster_median_transformer_block_file> = {faster_median_transformer_block_file}
-# <slower_median_transformer_block_file> = {slower_median_transformer_block_file}
-# <output_file> = {output_file}
-
-# You are performance expert for LLM inference engines and your goal is to fix performance issues in <slower_framework> by porting code pieces from <faster_framework> with minimal code changes to both frameworks, while focusing on the actual performance issue that needs to be fixed.
-
-# - <faster_transformer_block_high_level_ops_file> is a list of high-level transformer block operations of the faster framework.
-# - <slower_transformer_block_high_level_ops_file> is a list of high-level transformer block operations of the slower framework.
-# - <faster_median_transformer_block_file> is a median transformer block of the faster framework, with low-level kernel to high-level source code per-operation correlations.
-# - <slower_median_transformer_block_file> is a median transformer block of the slower framework, with low-level kernel to high-level source code per-operation correlations.
-
-# <test_id>=[model]-tp_$[num_gpus]-isl_[input_len]-osl_[output_len]
-# <test_id_with_batch>=<test_id>-b_[concurrency]
-# <full_test_id>=[framework]-<test_id_with_batch>
-
-# The <faster_framework_test_dir> and <slower_framework_test_dir> are the test/profile/run-logs directories for the faster and slower framework respectively. Each directory has the following format (that encodes test parameters): ../<test_id_with_batch>/[framework], and it includes the following files:
-#     - bench-<full_test_id>.json file that has the benchmark results of running the test on the framework
-#     - run-log-<full_test_id>.txt file that has the run log of executing the framework
-#     - run-log-profile-<full_test_id>.txt file that has the profile run log of executing the framework
-#     - trace-<full_test_id>.nsys-rep file that has the NSYS profile results
-#     - trace-<full_test_id>.sqlite file that is the SQLite version of the nsys-rep file
-
-# The traces/logs provided are only for pure decode operations (no prefill).
-
-# - <framework_names> is a list of framework names involved
-# - <framework_source_codes> is a list of framework source codes that match respectively to <framework_names>
-# - The file <plan_file> has a sequence of improvement steps for <slower_framework> based on the comparison between frameworks running the model <model> in precision <precision> on <gpu_type> GPU, with ISL <isl>, OSL <osl> and batch size <batch_size>.
-# - Ensure to read PDFs if exist. Install necessary tools or codes. Do not skip it.
-
-# The goal of this task is to generate a multi-step high level coding plan for <slower_framework>, where the steps go from lower-level code changes to higher-level, that will implement the improvement step <plan_step> from <plan_file> where the faster framework is <faster_framework> and the slower is <slower_framework>. For the implementation, prefer to port code pieces from <faster_framework> to <slower_framework> with minimal changes to the code pieces, while adjusting the code pieces for <slower_framework> (if needed). Do the following and think hard:
-# - Analyze and understand in-detail the specific improvement <plan_step> by inspecting all relevant files and data.
-# - Focus on making the <slower_framework> faster for the specific execution that was tested here, so that code changes to <slower_framework> are minimal.
-# - Inspect in-detail source codes, run logs, high-level transformer block files, and median transformer block files (low-level => high-level per-op) (and anything else needed) to determine the exact code-paths / code-pieces taken in both <faster_framework> and <slower_framework> for this specific test and improvement step here.
-# - Detect and analyze in-detail the code-pieces from <faster_framework> that make it faster for this specific improvement.
-#     - Ensure to detect and understand in-detail the call-chain that is invoked from high-level functions/objects to lower-level functions/objects for this specific test and improvement step here.
-#     - Find the related commits and their descriptions to get more info/documentation about the active/found code-pieces and their related call-chain.
-#     - Consider and understand in-detail how the detected call-chain works for prefill-only, decode-only, and mix of prefill-decode execution modes.
-# - Detect and analyze in-detail the code-pieces from <slower_framework> that make it slower for this specific improvement.
-#     - Ensure to detect and understand in-detail the call-chain that is invoked from high-level functions/objects to lower-level functions/objects for this specific test and improvement step here.
-#     - Find the related commits and their descriptions to get more info/documentation about the active/found code-pieces and their related call-chain.
-#     - Consider and understand in-detail how the detected call-chain works for prefill-only, decode-only, and mix of prefill-decode execution modes.
-# - Determine which code pieces from <faster_framework> make sense to port to the <slower_framework> with minimal changes to both the code pieces and the <slower_framework> structure.
-#     - Ensure prefill-only, decode-only and mix of prefill-decode execution modes are handled in <slower_framework> in a similar way to <faster_framework>.
-# - For the sequence of ported code pieces to <slower_framework>, document how the code pieces are ported from <faster_framework> to <slower_framework>, what is unchanged and what is changed and why. Be professional, clear and concise. Ensure to explain the changes vs the call-chain that is invoked.
-# - Avoid importing code/modules/kernels directly from <faster_framework>, but instead port the codes to <slower_framework> by duplicating and adjusting the code in the <slower_framework>.
-# - Propose a multi-step high-level validation plan, where each step is a group of unit tests, and the steps go from lower-level code changes to higher-level. Ensure the following:
-#     - Full test code coverage, correctness and speed gains.
-#     - Ensure end-to-end tests for prefill-only, decode-only and mix of prefill-decode execution modes.
-#     - Ensure end-to-end tests for cuda graph modes.
-#     - End-to-end tests that execute the modified/new code-paths by providing highest level input tensors and verifying output tensors (vs baseline or known previous versions). If necessary, instantiate the modified/new classes/objects with the prepare/finalize codes that are required.
-#     - If possible, reuse existing code pieces from <slower_framework> or <faster_framework>.
-#     - Ensure there are multiple tests inside each file, and if some fails, then do not run the tests separately, instead ensure they all pass together. For example, CUDA illegal memory access in the middle means that the code is incorrect, so fix it. Do not skip anything. This is critical for correctness.
-
-# Finally:
-# - Review the work here for issues, and fix them. Repeat the review 3 times or more till high confidence is reached.
-
-# Output:
-# - Dump results to <cwd>/{output_file}
-# """
-
-#     def prompt(self):
-#         return self.prompt_template.format(
-#             cwd=self.claude_config.cwd,
-#             model=self.code_gen_config.model,
-#             precision=self.code_gen_config.precision,
-#             gpu_type=self.code_gen_config.gpu_type,
-#             batch_size=self.code_gen_config.batch_size,
-#             isl=self.code_gen_config.isl,
-#             osl=self.code_gen_config.osl,
-#             framework_names=self.code_gen_config.framework_names,
-#             framework_source_codes=self.code_gen_config.framework_source_codes,
-#             plan_file=self.code_gen_config.plan_file,
-#             plan_step=self.code_gen_config.plan_step,
-#             faster_framework=self.code_gen_config.faster_framework,
-#             slower_framework=self.code_gen_config.slower_framework,
-#             faster_framework_test_dir=self.code_gen_config.faster_framework_test_dir,
-#             slower_framework_test_dir=self.code_gen_config.slower_framework_test_dir,
-#             faster_transformer_block_high_level_ops_file=self.code_gen_config.faster_transformer_block_high_level_ops_file,
-#             slower_transformer_block_high_level_ops_file=self.code_gen_config.slower_transformer_block_high_level_ops_file,
-#             faster_median_transformer_block_file=self.code_gen_config.faster_median_transformer_block_file,
-#             slower_median_transformer_block_file=self.code_gen_config.slower_median_transformer_block_file,
-#             output_file=self.output_file,
-#         )
-
-
-# HIGH_LEVEL_CODE_PLAN_FILE = "high_level_code_plan.txt"
-
-
-# def gen_HighLevelCodePlanPrompt(
-#     claude_config: ClaudeConfig, code_gen_config: CodeGenConfig
-# ):
-#     return HighLevelCodePlanPrompt(
-#         claude_config=claude_config,
-#         code_gen_config=code_gen_config,
-#         output_file=HIGH_LEVEL_CODE_PLAN_FILE,
-#     )
-
-
-# @dataclass
-# class SmallPRsPrompt:
-#     claude_config: ClaudeConfig
-#     code_gen_config: CodeGenConfig
-#     high_level_code_plan_file: str
-#     output_file_prefix: str
-#     prompt_template: ClassVar[str] = """
-# <cwd> = {cwd}
-
-# <model> = {model}
-# <precision> = {precision}
-# <gpu_type> = {gpu_type}
-# <batch_size> = {batch_size}
-# <isl> = {isl}
-# <osl> = {osl}
-# <framework_names> = {framework_names}
-# <framework_source_codes> = {framework_source_codes}
-# <plan_file> = {plan_file}
-# <plan_step> = {plan_step}
-# <faster_framework> = {faster_framework}
-# <slower_framework> = {slower_framework}
-# <faster_framework_test_dir> = {faster_framework_test_dir}
-# <slower_framework_test_dir> = {slower_framework_test_dir}
-# <faster_transformer_block_high_level_ops_file> = {faster_transformer_block_high_level_ops_file}
-# <slower_transformer_block_high_level_ops_file> = {slower_transformer_block_high_level_ops_file}
-# <faster_median_transformer_block_file> = {faster_median_transformer_block_file}
-# <slower_median_transformer_block_file> = {slower_median_transformer_block_file}
-# <high_level_code_plan_file> = {high_level_code_plan_file}
-# <output_file_prefix> = {output_file_prefix}
-
-# - <faster_transformer_block_high_level_ops_file> is a list of high-level transformer block operations of the faster framework.
-# - <slower_transformer_block_high_level_ops_file> is a list of high-level transformer block operations of the slower framework.
-# - <faster_median_transformer_block_file> is a median transformer block of the faster framework, with low-level kernel to high-level source code per-operation correlations.
-# - <slower_median_transformer_block_file> is a median transformer block of the slower framework, with low-level kernel to high-level source code per-operation correlations.
-
-# <test_id>=[model]-tp_$[num_gpus]-isl_[input_len]-osl_[output_len]
-# <test_id_with_batch>=<test_id>-b_[concurrency]
-# <full_test_id>=[framework]-<test_id_with_batch>
-
-# The <faster_framework_test_dir> and <slower_framework_test_dir> are the test/profile/run-logs directories for the faster and slower framework respectively. Each directory has the following format (that encodes test parameters): ../<test_id_with_batch>/[framework], and it includes the following files:
-#     - bench-<full_test_id>.json file that has the benchmark results of running the test on the framework
-#     - run-log-<full_test_id>.txt file that has the run log of executing the framework
-#     - run-log-profile-<full_test_id>.txt file that has the profile run log of executing the framework
-#     - trace-<full_test_id>.nsys-rep file that has the NSYS profile results
-#     - trace-<full_test_id>.sqlite file that is the SQLite version of the nsys-rep file
-
-# The traces provided are only for pure decode operations (no prefill).
-
-# - <framework_names> is a list of framework names involved
-# - <framework_source_codes> is a list of framework source codes that match respectively to <framework_names>
-# - The file <plan_file> has a sequence of improvement steps for <slower_framework> based on the comparison between frameworks running the model <model> in precision <precision> on <gpu_type> GPU, with ISL <isl>, OSL <osl> and batch size <batch_size>.
-# - The file <high_level_code_plan_file> has the multi-step high-level coding plan to apply the improvement <plan_step> to <slower_framework>.
-
-# The goal is to generate a code patch for <slower_framework> that will apply the improvement <plan_step> from <plan_file> based on the multi-step high-level coding plan from <high_level_code_plan_file>. Do the following and think hard:
-# - Prefer to port code-pieces from <faster_framework> with minimal modifications to both frameworks, so that the correctness will be preserved and less new code will be generated. Ensure the ported code pieces are adjusted as necessary for <slower_framework> code structure.
-# - If the code patch is too complex, then break down the problem to a sequence of small code patches. This will make code application and verification simpler.
-# - For each code patch, write tests to verify correctness, coverage and speed gains.
-# - Write tests based on the high-level test plan from <high_level_code_plan_file>. Ensure all tests run (no skip) and all correct.
-# - Write end-to-end tests for full verification as follows:
-#     - Must execute all modified/new code-paths by providing input tensors (on the highest level possible)
-#     - Must verify output tensors by comparing to baseline (old code or known code that works from before the changes/PR)
-#     - Do not skip these important tests
-#     - There is no need to execute a full model for these tests, the goal is to instantiate the highest level classes/objects possible (ones that were modified or created), provide input tensors, and verify output tensors for correctness.
-#     - If possible, reuse existing test code pieces from <slower_framework>.
-#     - Ensure to test many use-cases and edge-cases.
-# - Do not skip any tests, and make sure all of them run correctly. If something fails, then fix the related issues.
-# - Ensure all of the tests are part of the full patch and that all tests are added inside <slower_framework> in the related test sub-directories.
-
-# Finally:
-# - Apply the new code patches and tests
-# - Review the code patches for issues, and fix them. Repeat the review 3 times or more till high confidence is reached.
-# - Review the tests for issues, and fix them. Repeat the review 3 times or more till high confidence is reached.
-# - Run all of the tests, ensure no SKIP, all works, full correctness and full speed gains.
-
-# Output:
-# - Dump a brief explanation of the sequence of PRs and relevant info to <cwd>/<output_file_prefix>_info.txt so it will be easy to understand the summary of the work here.
-# - Dump the sequence of small code patches to <cwd>/<output_file_prefix>_[seq_id].patch
-# - Dump the final full code patch to <cwd>/<output_file_prefix>_full.patch
-# - Dump all unit tests to <cwd>/
-# """
-
-#     def prompt(self):
-#         return self.prompt_template.format(
-#             cwd=self.claude_config.cwd,
-#             model=self.code_gen_config.model,
-#             precision=self.code_gen_config.precision,
-#             gpu_type=self.code_gen_config.gpu_type,
-#             batch_size=self.code_gen_config.batch_size,
-#             isl=self.code_gen_config.isl,
-#             osl=self.code_gen_config.osl,
-#             framework_names=self.code_gen_config.framework_names,
-#             framework_source_codes=self.code_gen_config.framework_source_codes,
-#             plan_file=self.code_gen_config.plan_file,
-#             plan_step=self.code_gen_config.plan_step,
-#             faster_framework=self.code_gen_config.faster_framework,
-#             slower_framework=self.code_gen_config.slower_framework,
-#             faster_framework_test_dir=self.code_gen_config.faster_framework_test_dir,
-#             slower_framework_test_dir=self.code_gen_config.slower_framework_test_dir,
-#             faster_transformer_block_high_level_ops_file=self.code_gen_config.faster_transformer_block_high_level_ops_file,
-#             slower_transformer_block_high_level_ops_file=self.code_gen_config.slower_transformer_block_high_level_ops_file,
-#             faster_median_transformer_block_file=self.code_gen_config.faster_median_transformer_block_file,
-#             slower_median_transformer_block_file=self.code_gen_config.slower_median_transformer_block_file,
-#             high_level_code_plan_file=self.high_level_code_plan_file,
-#             output_file_prefix=self.output_file_prefix,
-#         )
-
-
-# PR_FILE_PREFIX = "pr_"
-
-
-# def gen_SmallPRsPrompt(
-#     claude_config: ClaudeConfig,
-#     code_gen_config: CodeGenConfig,
-#     high_level_code_plan_file: str,
-# ):
-#     return SmallPRsPrompt(
-#         claude_config=claude_config,
-#         code_gen_config=code_gen_config,
-#         high_level_code_plan_file=high_level_code_plan_file,
-#         output_file_prefix=PR_FILE_PREFIX,
-#     )
-
-
-# @dataclass
-# class FixIssuePrompt:
-#     claude_config: ClaudeConfig
-#     code_gen_config: CodeGenConfig
-#     high_level_code_plan_file: str
-#     prs_dir: str
-#     issue_to_fix_file: str
-#     issue_cwd: str
-#     prompt_template: ClassVar[str] = """
-# <cwd> = {cwd}
-# <issue_cwd> = {issue_cwd}
-
-# <model> = {model}
-# <precision> = {precision}
-# <gpu_type> = {gpu_type}
-# <batch_size> = {batch_size}
-# <isl> = {isl}
-# <osl> = {osl}
-# <framework_names> = {framework_names}
-# <framework_source_codes> = {framework_source_codes}
-# <plan_file> = {plan_file}
-# <plan_step> = {plan_step}
-# <faster_framework> = {faster_framework}
-# <slower_framework> = {slower_framework}
-# <faster_framework_test_dir> = {faster_framework_test_dir}
-# <slower_framework_test_dir> = {slower_framework_test_dir}
-# <faster_transformer_block_high_level_ops_file> = {faster_transformer_block_high_level_ops_file}
-# <slower_transformer_block_high_level_ops_file> = {slower_transformer_block_high_level_ops_file}
-# <faster_median_transformer_block_file> = {faster_median_transformer_block_file}
-# <slower_median_transformer_block_file> = {slower_median_transformer_block_file}
-# <high_level_code_plan_file> = {high_level_code_plan_file}
-# <prs_dir> = {prs_dir}
-# <issue_to_fix_file> = {issue_to_fix_file}
-
-# - <faster_transformer_block_high_level_ops_file> is a list of high-level transformer block operations of the faster framework.
-# - <slower_transformer_block_high_level_ops_file> is a list of high-level transformer block operations of the slower framework.
-# - <faster_median_transformer_block_file> is a median transformer block of the faster framework, with low-level kernel to high-level source code per-operation correlations.
-# - <slower_median_transformer_block_file> is a median transformer block of the slower framework, with low-level kernel to high-level source code per-operation correlations.
-
-# <test_id>=[model]-tp_$[num_gpus]-isl_[input_len]-osl_[output_len]
-# <test_id_with_batch>=<test_id>-b_[concurrency]
-# <full_test_id>=[framework]-<test_id_with_batch>
-
-# The <faster_framework_test_dir> and <slower_framework_test_dir> are the test/profile/run-logs directories for the faster and slower framework respectively. Each directory has the following format (that encodes test parameters): ../<test_id_with_batch>/[framework], and it includes the following files:
-#     - bench-<full_test_id>.json file that has the benchmark results of running the test on the framework
-#     - run-log-<full_test_id>.txt file that has the run log of executing the framework
-#     - run-log-profile-<full_test_id>.txt file that has the profile run log of executing the framework
-#     - trace-<full_test_id>.nsys-rep file that has the NSYS profile results
-#     - trace-<full_test_id>.sqlite file that is the SQLite version of the nsys-rep file
-
-# The traces provided are only for pure decode operations (no prefill).
-
-# - <framework_names> is a list of framework names involved
-# - <framework_source_codes> is a list of framework source codes that match respectively to <framework_names>
-# - The file <plan_file> has a sequence of improvement steps for <slower_framework> based on the comparison between frameworks running the model <model> in precision <precision> on <gpu_type> GPU, with ISL <isl>, OSL <osl> and batch size <batch_size>.
-# - The file <high_level_code_plan_file> has the multi-step high-level coding plan to apply the improvement <plan_step> to <slower_framework>.
-# - Inside <prs_dir> directory are the code patches that implement the multi-step high-level coding plan from <high_level_code_plan_file> that applies the improvement <plan_step> to <slower_framework>.
-
-# The goal of this task is to fix the issue described in <issue_to_fix_file> that happens after the code patches from <prs_dir> are applied to <slower_framework> source code (that is inside the related directory from <framework_source_codes>), and the new code is executed. Do the following and think hard:
-# - Analyze and understand in-detail the issue <issue_to_fix>.
-# - Detect and analyze in-detail the root causes that make issue <issue_to_fix> to appear in <slower_framework>. Ensure to correlate the findings here with the multi-step high-level coding plan from <high_level_code_plan_file>.
-# - Detect and analyze in-detail the root causes that make issue <issue_to_fix> to NOT appear in <faster_framework>. Ensure to correlate the findings here with the multi-step high-level coding plan from <high_level_code_plan_file>.
-# - Fix <slower_framework> code patches to remove the issue <issue_to_fix> with minimal changes to the code patches.
-# - Strongly prefer to port fixes/ideas/code-pieces from <faster_framework> to fix issue <issue_to_fix> in <slower_framework>.
-# - For the sequence of changes made to fix the issue, write a sequence of tests that verify each small step taken for correctness, and eventually verifying the full fix end-to-end as follows:
-#     - The sequence of tests must go from smaller low-level tests, to larger higher-level tests to gradually test the correctness.
-#     - Make sure everything passes, for prefill, decode and mix of prefill and decode executions.
-#     - Make sure to test cuda graph modes enabled with the new code-paths for full correctness.
-#     - Make sure to have a large end-to-end tests that compare vs baseline and test all possible modes of execution (prefill/decode, cuda graph and more).
-#     - Ensure the issue <issue_to_fix> is fixed in <slower_framework> with the new fix.
-# - Ensure all existing tests are still working. Run them and verify.
-# - Review the new fixed code patches again for issues and fix anything necessary. Repeat the review multiple times till high confidence is reached.
-
-# Finally:
-# - Apply the new fixed code patches, run all of the tests (do NOT SKIP any tests), and verify all works and the issue is fixed.
-# - Ensure there is more than 1 test inside each test file, and ensure that all of them pass when run together in one file. If there is an error due to CUDA illegal memory, then it means that the fix is incorrect. Do not try to run the tests separately. Make sure they pass all together while fixing the relevant issues.
-# - Try to verify your changes by running a sequence of small tests that verify the sequence of small changes, that together compromise the full change. Be detailed, precise and ensure everything works.
-
-# Output:
-# - Dump a brief explanation of the fix applied to <issue_cwd>/issue_info.txt so a professional programmer can understand the fix applied here step-by-step.
-# - Dump the sequence of new fixed small code patches to <issue_cwd>/<output_file_prefix>_[seq_id].patch
-# - Dump the new fixed final full code patch to <issue_cwd>/<output_file_prefix>_full.patch
-# - Dump all new/fixed and old tests to <issue_cwd>/
-
-# Do not modify any files inside <prs_dir>.
-
-# """
-
-#     def prompt(self):
-#         return self.prompt_template.format(
-#             cwd=self.claude_config.cwd,
-#             model=self.code_gen_config.model,
-#             precision=self.code_gen_config.precision,
-#             gpu_type=self.code_gen_config.gpu_type,
-#             batch_size=self.code_gen_config.batch_size,
-#             isl=self.code_gen_config.isl,
-#             osl=self.code_gen_config.osl,
-#             framework_names=self.code_gen_config.framework_names,
-#             framework_source_codes=self.code_gen_config.framework_source_codes,
-#             plan_file=self.code_gen_config.plan_file,
-#             plan_step=self.code_gen_config.plan_step,
-#             faster_framework=self.code_gen_config.faster_framework,
-#             slower_framework=self.code_gen_config.slower_framework,
-#             faster_framework_test_dir=self.code_gen_config.faster_framework_test_dir,
-#             slower_framework_test_dir=self.code_gen_config.slower_framework_test_dir,
-#             faster_transformer_block_high_level_ops_file=self.code_gen_config.faster_transformer_block_high_level_ops_file,
-#             slower_transformer_block_high_level_ops_file=self.code_gen_config.slower_transformer_block_high_level_ops_file,
-#             faster_median_transformer_block_file=self.code_gen_config.faster_median_transformer_block_file,
-#             slower_median_transformer_block_file=self.code_gen_config.slower_median_transformer_block_file,
-#             high_level_code_plan_file=self.high_level_code_plan_file,
-#             prs_dir=self.prs_dir,
-#             issue_to_fix_file=self.issue_to_fix_file,
-#             issue_cwd=self.issue_cwd,
-#         )
-
-
-# def gen_FixIssuePrompt(
-#     claude_config: ClaudeConfig,
-#     code_gen_config: CodeGenConfig,
-#     high_level_code_plan_file: str,
-#     prs_dir: str,
-#     issue_to_fix_file: str,
-#     issue_cwd: str,
-# ):
-#     return FixIssuePrompt(
-#         claude_config=claude_config,
-#         code_gen_config=code_gen_config,
-#         high_level_code_plan_file=high_level_code_plan_file,
-#         prs_dir=prs_dir,
-#         issue_to_fix_file=issue_to_fix_file,
-#         issue_cwd=issue_cwd,
-#     )
