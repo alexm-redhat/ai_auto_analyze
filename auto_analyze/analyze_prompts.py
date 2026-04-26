@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import ClassVar
 
-from auto_analyze.analyze_configs import AnalyzeConfig
+from auto_analyze.analyze_configs import AnalyzeConfig, VLLM
 
 
 @dataclass
@@ -21,6 +21,8 @@ class TransformerBlockHighLevelPrompt:
 <framework_source_code> = {framework_source_code}
 <test_dir> = {test_dir}
 <output_file> = {output_file}
+
+- <cwd> is the current working directory
 
 You specialize in analyzing the inference performance of the model <model> in precision <precision> running via the <framework_name> framework on <gpu_type> GPU.
 
@@ -48,7 +50,7 @@ Do the following plan and think hard:
 - Each high-level operation may have multiple execution modes. Detect these execution modes for each high-level operation.
 - Based on different execution modes of each high-level operation, detect the types of transformer blocks that can run. 
 - For each transformer block type, summarize in a table the sequence of high-level operations of this transformer block, so that each operation is shown in a row and each row has: high-level operation name, short source code reference, and execution mode used (if exists).
-- Dump the resulting tables (that represent all possible transformer blocks) to <output_file> inside the current working directory.
+- Dump to <output_file> (in current working directory) all the resulting tables, which represent all possible transformer blocks.
 """
 
     def prompt(self):
@@ -116,7 +118,7 @@ For below, focus only on GPU 0 and ignore other GPUs (since we use tensor-parall
 
 
 GPU_OPS_FILE = "gpu_ops.txt"
-MAX_GPU_OPS = 1000
+MAX_GPU_OPS = 2000
 
 
 @dataclass
@@ -204,11 +206,13 @@ class CompareMedianTransformerBlocksPrompt:
 Do the following and think hard:
 - Match the sequence of operations of each median transformer block with the sequence of operations of other median transformer blocks, so that it will be possible to compare all of the median transformer blocks across frameworks. Base the matching on the high-level implementation details of how a transformer blocks are implemented in each framework. Ensure to take into account the separate GPU streams and their start and end synchronization points.
 - Analyze in-depth and compare in-detail the performance of the matched median transformer blocks from before, in order to find the performance differences.
-- Summarize in a single table all of the found performance differences. For each difference, provide:
+- Inside <transformer_blocks> there is also performance and timing information of the components that are not the transformer blocks, and also have effect on the inference pass total latency:
+    - Analyze and compare these components in-detail to understand their effect
+- Summarize in a single table all of the found performance differences, on both the transformer block level and on the non-transformer block level (the general system overhead). For each difference, provide:
     - a short description of the difference.
     - a short source code reference for all frameworks.
     - a short description how each framework can improve vs the other.
-- Ensure that the summary table covers the full transformer block GPU operation sequences with their high-level correlations, while properly correlating separate GPU streams.
+- Ensure that the summary table covers the full transformer block GPU operation sequences with their high-level correlations, while properly correlating separate GPU streams, and also fully covers the non-transformer block pieces with full details that necessary to understand and pinpoint the differences.
 - Dump results to <output_file> in the current working directory, including the summary table and other relevant information.
 
 """
@@ -227,6 +231,59 @@ Do the following and think hard:
 PERF_COMPARE_BLOCK_FILE = "perf_compare_blocks.txt"
 
 
+# @dataclass
+# class CompareGeneralOverheadsPrompt:
+#     model: str
+#     gpu_type: str
+#     transformer_blocks: list[str]
+#     blocks_perf_cmp_file: str
+#     framework_names: list[str]
+#     framework_source_codes: list[str]
+#     test_dirs: list[str]
+#     output_file: str
+#     prompt_template: ClassVar[str] = """
+# <transformer_blocks> = {transformer_blocks}
+# <blocks_perf_cmp_file> = {blocks_perf_cmp_file}
+# <framework_names> = {framework_names}
+# <framework_source_codes> = {framework_source_codes}
+# <test_dirs> = {test_dirs}
+# <output_file> = {output_file}
+
+# - <framework_names> is a list of framework names
+# - <framework_source_codes> is a list of framework source codes that match respectively to <framework_names>
+# - <transformer_blocks> is a list of median transformer blocks that match respectively to <framework_names>
+# - <blocks_perf_cmp_file> compares the median transformer blocks of <framework_names> respectively
+# - <test_dirs> are the test result directories for <framework_names> respectively. They include run logs with performance results and profile traces.
+
+# Do the following and think hard:
+# - Look at the run logs of <framework_names> and find the final performance results (token/secs) for both of them. Compare this performance result to see the total difference.
+# - Look at the <blocks_perf_cmp_file> and the performance difference that is reported there (wall time) and compare it vs the performance difference that is in run logs.
+# - There may be a gap between the difference in <blocks_perf_cmp_file> and the difference in the run logs.
+# - Analyze and understand in-detail the overheads of the relevant forward-pass mode here (for the test here), for both transformer block and non-transformer block components
+# - DO NOT CONSIDER any CPU related overheads in this analysis, they are not relevant. ONLY FOCUS on the components that are represented by GPU low-level operations inside the profile trace files of the frameworks:
+#     - Re-read and analyze the profile trace files GPU operation sequences to see the operations that are transformer blocks and non transformer blocks to be sure that all of them are covered in the analysis and properly compared.
+# - Use all of the observations about the forward pass components, both transformer block and non-transformer blocks to explain the performance differences between the frameworks.
+#     - Ensure differences are grounded in profile traces, actual code, and full understandings and learnings
+# - Dump the extended performance comparison summary between the frameworks to <output_file> in the current working directory. Ensure this extended performance comparison includes both transformer block comparison and the non-transformer block components comparison and analysis.
+
+# """
+
+#     def prompt(self):
+#         return self.prompt_template.format(
+#             model=self.model,
+#             gpu_type=self.gpu_type,
+#             transformer_blocks=self.transformer_blocks,
+#             blocks_perf_cmp_file=self.blocks_perf_cmp_file,
+#             framework_names=self.framework_names,
+#             framework_source_codes=self.framework_source_codes,
+#             test_dirs=self.test_dirs,
+#             output_file=self.output_file,
+#         )
+
+
+# GENERAL_PERF_COMPARE_BLOCK_FILE = "general_perf_compare_blocks.txt"
+
+
 @dataclass
 class PlanPrompt:
     model: str
@@ -235,30 +292,55 @@ class PlanPrompt:
     framework_names: list[str]
     framework_source_codes: list[str]
     comparison_file: str
+    target_framework: str
     output_file: str
     prompt_template: ClassVar[str] = """
-<transformer_blocks> = {transformer_blocks}
+<transformer_blocks>
+{transformer_blocks}
+</transformer_blocks>
 
-<framework_names> = {framework_names} 
-<framework_source_codes> = {framework_source_codes}
+<framework_names>
+{framework_names}
+</framework_names> 
+<framework_source_codes>
+{framework_source_codes}
+</framework_source_codes>
 
-<comparison_file> = {comparison_file}
+<comparison_file>
+{comparison_file}
+</comparison_file>
+<target_framework>
+{target_framework}
+</target_framework>
 
-<output_file> = {output_file}
+<output_file>
+{output_file}
+</output_file>
 
+<definitions>
 - <framework_names> is a list of framework names
 - <framework_source_codes> is a list of framework source codes that match respectively to <framework_names>
 - <transformer_blocks> is a list of median transformer blocks that match respectively to <framework_names>
 
 - The file <comparison_file> has an operation by operation comparison of <transformer_blocks>
+- The <target_framework> is the framework that we want to optimize and improve 
+</definitions>
 
+<instructions>
 Do the following and think hard:
-- For each performance issue in <comparison_file>, generate an improvement plan as follows:
-    - Fetch related source code files from <framework_source_codes> to analyze the performance issue in detail, in order to understand exactly why some frameworks are slower and why some frameworks are faster.
-    - Analyze how the performance issue can be fixed in the slower frameworks and plan it in detail for the slower frameworks. Ensure the step-by-step plan is clear, concise and detailed enough to execute on. 
-    - Provide a high-level step-by-step summary of the previous plan to fix the performance issue for the slower frameworks. Ensure the summary is clear and detailed.
+- Read, analyze and understand in-detail the performance comparisons in <comparison_file>  
+- Based on these comparisons, for the <target_framework>, detect all of the performance issues (where <target_framework> is slower) that need to be fixed to fully recover performance for the transformer block (skip anything outside of the block).
+- For each detected performance issue, generate an improvement plan as follows:
+    - Fetch related source code files from the associated <framework_source_codes> to analyze the performance issue in detail, in order to understand exactly why <target_framework> is slower than the other framework. Analyze the related call chains and participating classes/objects/functions that are key to the performance difference.
+    - Analyze how the performance issue can be fixed in the <target_framework> and plan it in detail for the <target_framework>. Ensure the step-by-step plan is clear, concise and detailed enough to execute on. 
+    - Provide a high-level coding step-by-step summary of the previous plan to fix the performance issue for the <target_framework>. For each step, provide source code file/line references and related code snippets to illustrate the key step points, so expert programmers can execute on it.
 - Order the resulting sequence of plans by priority and their impact
+- Ensure the performance is fully recovered in the <target_framework> for the transformer block, DO NOT MISS OPTIMIZATIONS.
+</instructions>
+
+<output>
 - Dump the resulting sequence of plans to <output_file>
+</output>
 
 """
 
@@ -270,6 +352,7 @@ Do the following and think hard:
             framework_names=self.framework_names,
             framework_source_codes=self.framework_source_codes,
             comparison_file=self.comparison_file,
+            target_framework=self.target_framework,
             output_file=self.output_file,
         )
 
@@ -282,33 +365,148 @@ class SummaryPDFPrompt:
     model: str
     precision: str
     gpu_type: str
+    transformer_blocks: list[str]
     cmp_file: str
     plan_file: str
+    target_framework: str
+    framework_names: list[str]
+    framework_source_codes: list[str]
     output_file: str
     prompt_template: ClassVar[str] = """
-<model> = {model}
-<precision> = {precision}
-<gpu_type> = {gpu_type}
-<cmp_file> = {cmp_file}
-<plan_file> = {plan_file} 
-<output_file> = {output_file}
+<model>{model}</model>
+<precision>{precision}</precision>
+<gpu_type>{gpu_type}</gpu_type>
+<transformer_blocks>{transformer_blocks}</transformer_blocks>
+<cmp_file>{cmp_file}</cmp_file>
+<plan_file>{plan_file}</plan_file>
+<target_framework>{target_framework}</target_framework>
+<framework_names>{framework_names}</framework_names>
+<framework_source_codes>{framework_source_codes}</framework_source_codes>
+<output_file>{output_file}</output_file>
 
-- The model benchmarked and compared is <model> in precision <precision> running on <gpu_type> gpu
+<definitions>
+- Benchmark: <model> in <precision> on <gpu_type> GPU.
+- <framework_names>: list of frameworks; <framework_source_codes>: their source trees.
+- <transformer_blocks>: median transformer blocks per framework.
+- <cmp_file>: op-by-op comparison of the median blocks.
+- <plan_file>: ranked improvement plans for <target_framework>.
+</definitions>
 
-- The file <plan_file> provides an improvement plan for each performance issue for each framework
+<instructions>
+Generate a professional PDF presenting a ranked improvement plan for <target_framework>.
+Audience: C-level executives AND kernel-level engineers.
 
-The goal of this task is to generate a summary PDF file that has the comparison and planning information presented in a clear, concise and detailed way. Think hard for this task to ensure it is done best.
+Write and execute ONE self-contained Python script using reportlab and pygments.
 
-Generate a summary PDF as follows:
-- It has information from <cmp_file> and <plan_file>
-- The PDF is technical, nicely formatted, with professional colors
-- The PDF preseves proper alignment of tables and text
-- The PDF is structured for both high-level executives and professional programmers
-- PDF uses PDF-style formatting instead of TXT formatting
-- Focus only on issues where vllm is slower than the other frameworks
-- Ensure the PDF is brief, clear and concise while being detailed and thorough
+=== ANALYSIS (before generating) ===
 
-Dump the resulting PDF to <output_file>.
+1. Read <plan_file> — extract every issue where <target_framework> is slower.
+2. Read <cmp_file> — parse op-by-op comparison data.
+3. For each issue, inspect relevant source files in <framework_source_codes>.
+   Do NOT fabricate code — only use real code from the source.
+4. Rank issues by (estimated_ns_savings x ease_of_implementation).
+5. Per issue, identify 2-4 implementation steps with file:line refs and real code snippets.
+
+=== VISUAL DESIGN ===
+
+Color palette (use these exact hex values):
+  primary:       #1B2A4A  (dark navy — titles, headers)
+  secondary:     #2E86AB  (steel blue — section accents, rule lines)
+  accent:        #E8630A  (burnt orange — impact badges)
+  success:       #1A7F37  (forest green — positive deltas)
+  danger:        #CF222E  (signal red — regressions)
+  bg_light:      #F6F8FA  (ghost white — backgrounds)
+  bg_alt_row:    #EEF2F7  (pale blue-gray — alternating table rows)
+  border:        #D0D7DE  (silver — gridlines)
+  text_primary:  #1F2328  (near-black — body text)
+  text_secondary:#656D76  (slate gray — captions)
+
+Page: LETTER portrait, margins 0.75in left/right, 0.6in top/bottom.
+
+Typography:
+  - Title: Helvetica-Bold 22pt, primary color.
+  - Section headers: Helvetica-Bold 15pt, primary color, with a secondary-colored
+    rule line underneath.
+  - Subsection headers: Helvetica-Bold 12pt, secondary color.
+  - Body: Helvetica 10pt, text_primary, 14pt leading.
+  - Captions: Helvetica-Oblique 8.5pt, text_secondary, centered.
+
+Tables:
+  - Header row: primary background, white bold text, 9pt.
+  - Body: Helvetica 9pt, alternating row backgrounds (white / bg_alt_row).
+  - Grid: 0.5pt border color. Cell padding: 5pt vertical, 6pt horizontal.
+  - Performance deltas: green for improvements, red for regressions.
+  - Appendix tables: use smaller font (7.5pt) if needed to fit columns.
+  - Bold rows where timing delta exceeds 10%.
+  - Always add spacing before and after every table to prevent overlap.
+
+Code blocks — LIGHT THEME:
+  - Background: #F6F8FA (ghost white). Border: 1pt #D0D7DE (silver), rounded feel.
+  - Default text: Courier 8.5pt, color #1F2328 (near-black).
+  - Use pygments tokenization with XPreformatted (NOT Preformatted) for syntax coloring.
+  - Token colors (light-theme friendly, high contrast on white):
+      Keywords:          #CF222E  (red)
+      Strings/chars:     #0A3069  (deep blue)
+      Comments:          #656D76  (gray, italic)
+      Functions/builtins:#8250DF  (purple)
+      Numbers:           #0550AE  (blue)
+      Decorators:        #953800  (brown)
+      Operators/punct:   #1F2328  (near-black)
+      Class names/types: #953800  (brown)
+      Default:           #1F2328  (inherits from style)
+  - Wrap the XPreformatted in a Table cell for reliable background rendering.
+  - Hard-wrap lines at 88 chars; use KeepTogether to prevent page splits.
+  - Add spacing above and below each code block.
+  - Inline code refs: Courier 9pt, #1F2328 text on #F6F8FA background.
+  - CRITICAL: Escape XML entities in all text going into Paragraph/XPreformatted.
+
+Impact badges (small colored table cell before issue title):
+  - HIGH IMPACT: danger background, white text.
+  - MEDIUM IMPACT: accent background, white text.
+  - LOW IMPACT: secondary background, white text.
+
+=== DOCUMENT STRUCTURE ===
+
+1. COVER BLOCK
+   - Title: "<target_framework> Performance Optimization Report"
+   - Subtitle: "<model> | <precision> | <gpu_type>"
+   - Date line: "Generated: [today's date]"
+   - Horizontal rule separator.
+
+2. EXECUTIVE SUMMARY (max 1 page)
+   - 3-5 bullets: what was compared, total perf gap, top 3 issues, estimated total gain.
+   - Summary table: [Issue #, Title, Impact (ns), Difficulty, Priority].
+   - Page break.
+
+3. DETAILED IMPROVEMENT PLANS (one sub-section per issue, ranked)
+   Per issue:
+   - Impact badge + title.
+   - "Problem": 2-3 executive-friendly sentences.
+   - "Root Cause": technical explanation with inline code refs.
+   - "Performance Impact" table: [Metric, <target_framework>, Other, Delta].
+   - "Implementation Guide": numbered steps, each with description,
+     source file ref, syntax-highlighted code snippet, and brief explanation.
+   - Spacing between issues.
+
+4. APPENDIX A: OP-BY-OP COMPARISON
+   - Render the COMPLETE contents of <cmp_file> as formatted tables.
+   - Do NOT omit any operations.
+
+5. APPENDIX B: SOURCE REFERENCES
+   - All referenced source files, grouped by framework.
+
+=== GENERATION RULES ===
+
+- One self-contained Python script, deterministic, no network calls.
+- Use Paragraph for wrapping text; XPreformatted for code (never Preformatted).
+- Test that the script runs without errors before finishing.
+- Verify: no overlapping elements, no clipped tables, code blocks have multi-color
+  syntax highlighting on the light background, appendix is complete.
+</instructions>
+
+<output>
+Write and execute the Python script. Save the PDF to <output_file>.
+</output>
 
 """
 
@@ -317,11 +515,18 @@ Dump the resulting PDF to <output_file>.
             model=self.model,
             precision=self.precision,
             gpu_type=self.gpu_type,
+            transformer_blocks=self.transformer_blocks,
             cmp_file=self.cmp_file,
             plan_file=self.plan_file,
+            target_framework=self.target_framework,
+            framework_names=self.framework_names,
+            framework_source_codes=self.framework_source_codes,
             output_file=self.output_file,
         )
 
+
+# TODO: Remove
+#- For each framework, provide a single "phase lane" that annotates the median transformer block phases. Ensure this phase lane is immediately above the cuda stream lanes, not between them. Also, ensure the phase names are brief and clear. Also, ensure that there are NO GAPS between phases, i.e. every cuda stream operation should have an associated phase name sub-range in the phase lane.
 
 @dataclass
 class CombinedTracePrompt:
@@ -373,8 +578,10 @@ The goal of this task is to generate a new combined trace file, in Chrome trace 
 - Ensure all median transformer blocks start at the same time point 0.
 - For each framework's trace-*.sqlite NSYS profile trace, focus on GPU 0, and find the range that represents the median transformer block of this framework, while detecting the cuda streams in this range.
 - For each framework, show the cuda streams as they appear in the above found range (one after another). I.e. each framework's lanes / cuda-streams are grouped together. Ensure all operations are showed across all cuda streams of the found range (per framework).
-- For each framework, provide a single "phase lane" that annotates the median transformer block phases. Ensure this phase lane is immediately above the cuda stream lanes, not between them. Also, ensure the phase names are brief and clear. Also, ensure that there are no gaps in phases, i.e. every cuda stream operation should have an associated phase name sub-range in the phase lane.
-- If there are operations in the same cuda stream that have some overlap, then ensure to place these operations on different lanes in this stream, so that perfetto viewer will not drop them.
+- For each cuda stream:
+    - Overlapping operations inside the same cuda stream (which is mainly due to PDL), cannot be propertly shown in perfetto viewer (it errors and drops them). To avoid this, use multiple lanes to represent a cuda stream and place the overlapping operations on different lanes of this stream, so that there are NO OVERLAPPING operations inside the same lane. Annotate the lanes of the same cuda stream accordingly so it will be clear that they belong to the same cuda stream.
+    - Ensure no operation is missed or skipped due to overlaps.
+    - Ensure all overlaps are fixed by using separate lanes
 - For each operation, ensure that all NSYS GPU utilization details and params (if exists) are also transferred to a GPU utilization section.
 - For each operation name, prepend a prefix high-level name, based on the median transformer block correlation of operation names to their high-level names. Ensure the high-level name is brief and clear.
 - For each operation, add a detailed description field that has the following information:
@@ -382,6 +589,13 @@ The goal of this task is to generate a new combined trace file, in Chrome trace 
     - Explanation of the operations (based on median transformer block file and high level transformer block file)
     - Any other relevant details that are important for understanding the operation in the context of the trace and the comparison.
     - If this is a vLLM operation, then provide an explanation of the relevant improvement plan for this operation, and a reference to the specific improvement.
+
+- Follow all of the previous guidelines strictly, DO NOT SKIP ANYTHING.
+- Critically review the work, find issues and fix them.
+    - Ensure that there are NO OVERLAPPING operations on the same lane.
+    - Ensure all operations have the high level context that is brief, concise and clear.
+    - Ensure all operations have source code references in their details section.
+    - Ensure that all operations of both frameworks are shown. I.e no operation is missed or skipped (THIS IS IMPORTANT!), and the operation overlaps another operation then it is represented in a different lane.
 
 Dump the new combined trace file to <output_file> in Claude's current working directory.
 
@@ -489,8 +703,52 @@ def gen_perf_compare_prompt(configs: list[AnalyzeConfig], block_files: list[str]
     return perf_cmp_prompt.prompt(), perf_cmp_prompt.output_file
 
 
+# def gen_general_perf_compare_prompt(
+#     configs: list[AnalyzeConfig],
+#     block_files: list[str],
+#     blocks_perf_cmp_file: str,
+#     test_dirs: list[str],
+# ):
+#     assert len(configs) >= 2
+#     assert len(block_files) >= 2
+
+#     first_model = configs[0].model
+#     all_same_model = all(config.model == first_model for config in configs)
+
+#     first_gpu_type = configs[0].gpu_type
+#     all_same_gpu_type = all(config.gpu_type == first_gpu_type for config in configs)
+
+#     assert all_same_model and all_same_gpu_type, (
+#         "all_same_model = {} and all_same_gpu_type = {}".format(
+#             all_same_model, all_same_gpu_type
+#         )
+#     )
+
+#     framework_names = [config.framework_name for config in configs]
+#     framework_source_codes = ([config.framework_source_code for config in configs],)
+
+#     general_perf_cmp_prompt = CompareGeneralOverheadsPrompt(
+#         model=configs[0].model,
+#         gpu_type=configs[0].gpu_type,
+#         transformer_blocks=block_files,
+#         blocks_perf_cmp_file=blocks_perf_cmp_file,
+#         framework_names=framework_names,
+#         framework_source_codes=framework_source_codes,
+#         test_dirs=test_dirs,
+#         output_file="{}__{}".format(
+#             "_".join(framework_names),
+#             GENERAL_PERF_COMPARE_BLOCK_FILE,
+#         ),
+#     )
+
+#     return general_perf_cmp_prompt.prompt(), general_perf_cmp_prompt.output_file
+
+
 def gen_plan_prompt(
-    configs: list[AnalyzeConfig], block_files: list[str], perf_compare_file: str
+    configs: list[AnalyzeConfig],
+    block_files: list[str],
+    perf_compare_file: str,
+    target_framework: str,
 ):
     assert len(configs) >= 2
     assert len(block_files) >= 2
@@ -517,6 +775,7 @@ def gen_plan_prompt(
         framework_names=framework_names,
         framework_source_codes=framework_source_codes,
         comparison_file=perf_compare_file,
+        target_framework=target_framework,
         output_file="{}__{}".format(
             "_".join(framework_names),
             PLAN_FILE,
@@ -541,7 +800,7 @@ def gen_combined_trace_prompt(
         block_high_level_files.append(block_high_level_file)
 
     _, perf_cmp_file = gen_perf_compare_prompt(configs, block_files)
-    _, plan_file = gen_plan_prompt(configs, block_files, perf_cmp_file)
+    _, plan_file = gen_plan_prompt(configs, block_files, perf_cmp_file, VLLM)
 
     combined_trace_prompt = CombinedTracePrompt(
         model=model,

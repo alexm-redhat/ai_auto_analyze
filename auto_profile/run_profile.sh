@@ -10,6 +10,6 @@ time ./auto_profile/vllm/vllm_run_docker.sh
 
 echo "RUN TRT DOCKER"
 echo "==============="
-time ./auto_profile/trt/trt_run_docker.sh
+# time ./auto_profile/trt/trt_run_docker.sh
 
 

@@ -7,19 +7,40 @@ import asyncio
 from utils import Tee
 from claude_utils import claude_run
 
-from auto_analyze.analyze_configs import claude_config, MODEL, PRECISION, GPU_TYPE
+from auto_analyze.analyze_configs import (
+    claude_config,
+    analyze_configs,
+    MODEL,
+    PRECISION,
+    GPU_TYPE,
+    VLLM,
+)
 from auto_analyze.analyze_prompts import SummaryPDFPrompt
 
 LOG_FILE = "__run_log_gen_pdf.txt"
 
 
 def gen_prompts(args):
+    framework_names = [
+        config.framework_name for config in analyze_configs
+    ]
+
+    framework_source_codes = [
+        config.framework_source_code for config in analyze_configs
+    ]
+
+    transformer_blocks = args.transformer_blocks
+
     summary_pdf_prompt = SummaryPDFPrompt(
         model=MODEL,
         precision=PRECISION,
         gpu_type=GPU_TYPE,
+        transformer_blocks=transformer_blocks,
         cmp_file=args.cmp_file,
         plan_file=args.plan_file,
+        target_framework=VLLM,
+        framework_names=framework_names,
+        framework_source_codes=framework_source_codes,
         output_file=args.output_pdf_file,
     )
 
@@ -36,6 +57,13 @@ if __name__ == "__main__":
     # Parse args
     parser = argparse.ArgumentParser(description="Generate PDF summary")
 
+    parser.add_argument(
+        "--transformer-blocks",
+        required=True,
+        type=str,
+        nargs="+",
+        help="List of median transformer block files (e.g. vllm_median_block.txt sglang_median_block.txt)",
+    )
     parser.add_argument(
         "--cmp-file",
         required=True,

@@ -137,6 +137,7 @@ for p in "${PROFILES[@]}"; do
             --report_json ${result_filename} \
             --streaming \
             --warmup $NUM_WARMUPS \
+            --trust-remote-code \
             ${yaml_flag}"
         
         log_info "RUN NORMAL"

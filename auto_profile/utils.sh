@@ -335,6 +335,20 @@ make_result_filename() {
   echo "${output_dir}/bench-${test_filename}.json"
 }
 
+make_prepare_log_filename() {
+  local output_dir="$1"
+  local test_filename="$2"
+
+  # Validate required parameters
+  if [[ -z "$output_dir" || -z "$test_filename" ]]; then
+    echo "Error: missing required parameter" >&2
+    echo "Usage: make_prepare_log_filename <output_dir> <test_filename> " >&2
+    return 1
+  fi
+
+  echo "${output_dir}/prepare-log-${test_filename}.txt"
+}
+
 make_run_log_filename() {
   local output_dir="$1"
   local test_filename="$2"

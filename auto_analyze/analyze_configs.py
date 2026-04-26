@@ -13,24 +13,24 @@ class AnalyzeConfig:
     gpu_ops_filter: str = ""
 
 
-MODEL = "deepseek-ai/DeepSeek-V3.2"
-PRECISION = "FP8"
-GPU_TYPE = "H200"
+MODEL = "nvidia/Kimi-K2.5-NVFP4"
+PRECISION = "NVFP4"
+GPU_TYPE = "B200"
 ISL = 4
 OSL = 1024
 BATCH_SIZE = 1
 
 VLLM = "vllm"
 SGLANG = "sglang"
-TRT = "trt"
+# TRT = "trt"
 
-VLLM_TEST_DIR = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_profile/results/parse/test_results/deepseek-ai__DeepSeek-V3.2-tp_8-isl_4-osl_1024-b_1-mode_none/vllm"
-SGLANG_TEST_DIR = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_profile/results/parse/test_results/deepseek-ai__DeepSeek-V3.2-tp_8-isl_4-osl_1024-b_1-mode_none/sgl"
-TRT_TEST_DIR = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_profile/results/parse/test_results/deepseek-ai__DeepSeek-V3.2-tp_8-isl_4-osl_1024-b_1-mode_none/trt"
+VLLM_TEST_DIR = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_profile/kimi_results_stored/parse/test_results/nvidia__Kimi-K2.5-NVFP4-tp_8-isl_4-osl_1024-b_1/vllm"
+SGLANG_TEST_DIR = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_profile/kimi_results_stored/parse/test_results/nvidia__Kimi-K2.5-NVFP4-tp_8-isl_4-osl_1024-b_1/sgl"
+# TRT_TEST_DIR = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_profile/results/parse/test_results/deepseek-ai__DeepSeek-V3.2-tp_8-isl_4-osl_1024-b_1-mode_none/trt"
 
 claude_config = ClaudeConfig(
-    model="claude-opus-4-6",
-    # model="claude-opus-4-6[1m]",
+    # model="claude-opus-4-6",
+    model="claude-opus-4-6[1m]",
     # model="claude-opus-4-5",
     allowed_tools=["Read", "Write", "Bash"],
     perm_mode="acceptEdits",  # "bypassPermissions",
@@ -55,12 +55,12 @@ analyze_configs = [
         framework_source_code="/home/alexm-redhat/code/sglang",
         test_dir=SGLANG_TEST_DIR,
     ),
-    AnalyzeConfig(
-        model=MODEL,
-        precision=PRECISION,
-        gpu_type=GPU_TYPE,
-        framework_name=TRT,
-        framework_source_code="/home/alexm-redhat/code/TensorRT-LLM",
-        test_dir=TRT_TEST_DIR,
-    ),
+    # AnalyzeConfig(
+    #     model=MODEL,
+    #     precision=PRECISION,
+    #     gpu_type=GPU_TYPE,
+    #     framework_name=TRT,
+    #     framework_source_code="/home/alexm-redhat/code/TensorRT-LLM",
+    #     test_dir=TRT_TEST_DIR,
+    # ),
 ]

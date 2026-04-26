@@ -35,6 +35,9 @@ for p in "${PROFILES[@]}"; do
             
             ((num_requests = concurrency * NUM_WAVES))
 
+            EXTRA_PREPARE_CMDS=""
+            EXTRA_RUN_FLAGS=""
+
             # Set extra env vars
             mode=${MODE_NONE}
             if [[ -v profile[sgl_mode] \
@@ -68,6 +71,12 @@ for p in "${PROFILES[@]}"; do
             # Create output filenames
             result_filename="$(
                 make_result_filename \
+                    ${test_dir} \
+                    ${test_name}
+                )"
+            
+            run_prepare_filename="$(
+                make_prepare_log_filename \
                     ${test_dir} \
                     ${test_name}
                 )"
@@ -121,7 +130,7 @@ for p in "${PROFILES[@]}"; do
             # due to long 10-20min DeepGEMM compilations
             DIST_TIMEOUT_FLAG="--dist-timeout 1800"
 
-            # Run
+            # Run main cmd
             run_cmd="python -m sglang.bench_one_batch \
                 --model-path ${model} \
                 --tp ${num_gpus} \
@@ -129,9 +138,21 @@ for p in "${PROFILES[@]}"; do
                 --input-len ${input_len} \
                 --output-len ${output_len} \
                 --result-filename ${result_filename} \
-                $DIST_TIMEOUT_FLAG \
-                $CUDA_GRAPH_FLAG"
+                --trust-remote-code \
+                ${DIST_TIMEOUT_FLAG} \
+                ${CUDA_GRAPH_FLAG} \
+                ${EXTRA_RUN_FLAGS}"
+                
+
+            # Run prepare cmds
+            # Run prepare cmds
+            if [[ -n "$EXTRA_PREPARE_CMDS" ]]; then
+                log_info "RUN PREPARE"
+                run_and_log ${run_prepare_filename} \
+                    ${EXTRA_PREPARE_CMDS}
+            fi
             
+            # Run main cmd
             log_info "RUN NORMAL"
             run_and_log ${run_log_filename} \
                 env CUDA_VISIBLE_DEVICES=${gpu_ids} \

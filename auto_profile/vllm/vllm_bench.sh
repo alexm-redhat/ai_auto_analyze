@@ -35,6 +35,9 @@ for p in "${PROFILES[@]}"; do
             
             ((num_requests = concurrency * NUM_WAVES))
             
+            EXTRA_PREPARE_CMDS=""
+            EXTRA_RUN_FLAGS=""
+
             # Set extra env vars
             mode=${MODE_NONE}
             if [[ -v profile[vllm_mode] \
@@ -75,6 +78,12 @@ for p in "${PROFILES[@]}"; do
             # Create output filenames
             result_filename="$(
                 make_result_filename \
+                    ${test_dir} \
+                    ${test_name}
+                )"
+            
+            run_prepare_filename="$(
+                make_prepare_log_filename \
                     ${test_dir} \
                     ${test_name}
                 )"
@@ -122,7 +131,6 @@ for p in "${PROFILES[@]}"; do
 
             # Run
             run_cmd="vllm bench throughput \
-                --disable-log-requests \
                 --async-engine \
                 --backend vllm \
                 --model ${model} \
@@ -134,8 +142,19 @@ for p in "${PROFILES[@]}"; do
                 --max-num-seqs ${concurrency} \
                 --num-prompts ${num_requests} \
                 --max-model-len ${max_model_len} \
-                --output-json ${result_filename}"
+                --output-json ${result_filename} \
+                --trust-remote-code \
+                --async-scheduling \
+                ${EXTRA_RUN_FLAGS}"
+                
+            # Run prepare cmds
+            if [[ -n "$EXTRA_PREPARE_CMDS" ]]; then
+                log_info "RUN PREPARE"
+                run_and_log ${run_prepare_filename} \
+                    ${EXTRA_PREPARE_CMDS}
+            fi
             
+            # Run main cmd
             log_info "RUN NORMAL"
             run_and_log ${run_log_filename} \
                 env CUDA_VISIBLE_DEVICES=${gpu_ids} \
