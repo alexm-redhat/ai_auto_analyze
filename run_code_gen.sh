@@ -6,5 +6,5 @@ source auto_profile/utils.sh
 # clean_dir_contents "auto_code_gen/prs" "vllm" "sglang"
 
 # Run
-export CLAUDE_CODE_MAX_OUTPUT_TOKENS=120000
+source "$(dirname "$0")/env.sh"
 python -m auto_code_gen.run_code_gen

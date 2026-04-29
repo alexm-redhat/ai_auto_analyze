@@ -1,0 +1,13 @@
+{
+    "profiles": [
+        {
+            "model": "deepseek-ai/DeepSeek-V3.2",
+            "gpu_ids": "gpu_ids_8",
+            "exec_mode": "pure_decode",
+            "modes": []
+        }
+    ],
+    "concurrencies": [1, 16],
+    "frameworks": ["vllm", "sgl"],
+    "enable_traces": []
+}

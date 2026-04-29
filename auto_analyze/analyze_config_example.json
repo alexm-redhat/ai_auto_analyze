@@ -1,0 +1,24 @@
+{
+    "model": "nvidia/Kimi-K2.5-NVFP4",
+    "precision": "NVFP4",
+    "gpu_type": "B200",
+    "isl": 4,
+    "osl": 1024,
+    "batch_size": 1,
+    "claude_output_dir": "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_profile/kimi_results_stored/parse/test_results/nvidia__Kimi-K2.5-NVFP4-tp_8-isl_4-osl_1024-b_1/analyze",
+    "target_framework": "vllm",
+    "frameworks": [
+        {
+            "name": "vllm",
+            "source_code": "/home/alexm-redhat/code/vllm",
+            "test_dir": "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_profile/kimi_results_stored/parse/test_results/nvidia__Kimi-K2.5-NVFP4-tp_8-isl_4-osl_1024-b_1/vllm",
+            "gpu_ops_filter": ""
+        },
+        {
+            "name": "sglang",
+            "source_code": "/home/alexm-redhat/code/sglang",
+            "test_dir": "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_profile/kimi_results_stored/parse/test_results/nvidia__Kimi-K2.5-NVFP4-tp_8-isl_4-osl_1024-b_1/sgl",
+            "gpu_ops_filter": ""
+        }
+    ]
+}

@@ -1,0 +1,13 @@
+{
+    "profiles": [
+        {
+            "model": "Qwen/Qwen3-Coder-Next",
+            "gpu_ids": "gpu_ids_2",
+            "exec_mode": "pure_decode",
+            "modes": []
+        }
+    ],
+    "concurrencies": [1],
+    "frameworks": ["vllm", "sgl"],
+    "enable_traces": []
+}

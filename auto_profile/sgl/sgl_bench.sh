@@ -1,20 +1,21 @@
 #!/bin/bash
 
-source auto_profile/utils.sh
-source auto_profile/profile_config.sh
+INFRA_CONFIG="${1:?Usage: $0 <infra_config.json> <run_config.json>}"
+RUN_CONFIG="${2:?Usage: $0 <infra_config.json> <run_config.json>}"
 
-create_dir_if_missing ${DOCKER_RESULTS_DIR}
-create_clean_dir ${SGL_DOCKER_RESULTS_DIR}
+source auto_profile/utils.sh
+load_run_config "$INFRA_CONFIG" "$RUN_CONFIG"
+
+clean_dir_contents ${SGL_DOCKER_RESULTS_DIR}
 write_run_metadata ${SGL_DOCKER_RESULTS_DIR} ${SGL_DOCKER_IMAGE}
 
 log_info "Run profiles:"
 
 for p in "${PROFILES[@]}"; do
-    declare -n profile="$p"
-    model=${profile[model]}
-    gpu_ids=${profile[gpu_ids]}
-    input_len=${profile[input_len]}
-    output_len=${profile[output_len]}
+    model=$p
+    gpu_ids=${PROFILE_GPU_IDS[$p]}
+    input_len=${PROFILE_INPUT_LENS[$p]}
+    output_len=${PROFILE_OUTPUT_LENS[$p]}
     log_info "  Profiling:"
     log_info "    model      = ${model}"
     log_info "    gpu_ids    = ${gpu_ids}"
@@ -39,11 +40,10 @@ for p in "${PROFILES[@]}"; do
             EXTRA_RUN_FLAGS=""
 
             # Set extra env vars
-            mode=${MODE_NONE}
-            if [[ -v profile[sgl_mode] \
-                && -n "${profile[sgl_mode]}" \
-                && "${profile[sgl_mode]}" != "none" ]]; then
-                mode=${profile[sgl_mode]}
+            mode="none"
+            if [[ -n "${PROFILE_SGL_MODES[$p]}" \
+                && "${PROFILE_SGL_MODES[$p]}" != "none" ]]; then
+                mode=${PROFILE_SGL_MODES[$p]}
                 log_info "Set SGL MODE = ${mode}"
                 source "${AUTO_PROFILE_DIR}/${SGL}/${SGL}_mode_${mode}.sh"
             fi
@@ -104,7 +104,7 @@ for p in "${PROFILES[@]}"; do
             profile_acts=""
             profile_stage=""
             profile_prefix=""
-            if is_sgl_profile_enabled; then
+            if is_trace_enabled sgl; then
                 log_info "SGL profile is enabled."
                 
                 # Enable profile
@@ -134,7 +134,7 @@ for p in "${PROFILES[@]}"; do
             run_cmd="python -m sglang.bench_one_batch \
                 --model-path ${model} \
                 --tp ${num_gpus} \
-                --batch ${concurrency} \
+                --batch-size ${concurrency} \
                 --input-len ${input_len} \
                 --output-len ${output_len} \
                 --result-filename ${result_filename} \
@@ -158,7 +158,7 @@ for p in "${PROFILES[@]}"; do
                 env CUDA_VISIBLE_DEVICES=${gpu_ids} \
                 ${run_cmd}
             
-            if is_sgl_profile_enabled; then
+            if is_trace_enabled sgl; then
                 log_info "RUN PROFILE"
                 run_and_log ${run_log_profile_filename} \
                     env CUDA_VISIBLE_DEVICES=${gpu_ids} \

@@ -1,21 +1,24 @@
-import sys
+import os
 import time
 import asyncio
+import argparse
 
-from utils import Tee
-from claude_utils import claude_run
+from common.utils import setup_logging, safe_clean_dir
+from common.claude_utils import claude_run
 
-from auto_analyze.analyze_configs import claude_config, analyze_configs, VLLM
+from auto_analyze.analyze_configs import (
+    add_analyze_args,
+    load_config,
+    build_analyze_configs,
+    build_claude_config,
+)
 from auto_analyze.analyze_prompts import (
     gen_analyze_prompts,
     gen_perf_compare_prompt,
     gen_plan_prompt,
 )
 
-LOG_FILE = "__run_log_analyze.txt"
-
-
-def gen_prompts():
+def gen_analyze_step_prompts(analyze_configs, target_framework):
     prompts = []
     block_files = []
     for analyze_config in analyze_configs:
@@ -27,27 +30,46 @@ def gen_prompts():
         analyze_configs, block_files
     )
 
-    vllm_plan_prompt, plan_file = gen_plan_prompt(
+    plan_prompt, plan_file = gen_plan_prompt(
         analyze_configs,
         block_files,
         perf_cmp_file,
-        VLLM,
+        target_framework,
     )
 
     prompts.append(perf_cmp_prompt)
-    prompts.append(vllm_plan_prompt)
+    prompts.append(plan_prompt)
 
     return prompts
 
 
 if __name__ == "__main__":
-    # Redirect output to file as well
-    log_file = open(LOG_FILE, "w")
-    original_stdout = sys.stdout
-    sys.stdout = Tee(original_stdout, log_file)
+    setup_logging("analyze")
+
+    parser = argparse.ArgumentParser(description="Run analysis step")
+    add_analyze_args(parser)
+    args = parser.parse_args()
+
+    config = load_config(args.config)
+    analyze_configs = build_analyze_configs(config)
+    claude_config = build_claude_config(config)
+
+    output_dir = config["claude_output_dir"]
+    if os.path.exists(output_dir):
+        safe_clean_dir(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
 
     start_time = time.time()
-    asyncio.run(claude_run(claude_config, gen_prompts()))
-    duration_time = time.time() - start_time
 
-    print("FINISHED ALL: total_duration = {}".format(duration_time))
+    print("=== Analyze ===")
+    asyncio.run(
+        claude_run(
+            claude_config,
+            gen_analyze_step_prompts(
+                analyze_configs, config["target_framework"]
+            ),
+        )
+    )
+
+    duration_time = time.time() - start_time
+    print("FINISHED: duration = {:.1f}s".format(duration_time))

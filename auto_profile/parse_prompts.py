@@ -56,9 +56,16 @@ Next, generate a python program that creates a sequence of summary comparison ta
         - GPU type used
         - For each batch size tested, the full directory path to <test_dir>, sorted from small batch size to larger
 - Create a txt file for each table, where the filename encodes the table <test_id>. Ensure the table is aligned properly, clear and concise.
-- Also, create a single txt file that has all tables together. Ensure all tables are aligned properly.
+- Create a single txt file that has all tables together. Ensure all tables are aligned properly.
 - Create a PDF file with all of the tables.
 - Store all results in <output_dir>
+
+Now do the following:
+- For each test case <test_id_with_batch> where vLLM is slower than other framework, generate an output json file in <output_dir>/analyze_<test_id_with_batch>.json that has the test parameters formatted in the same way as the example file auto_analyze/analyze_config_example.json.
+    - Ensure the per-framework test dirs point to the proper sub-directories in <test_dir>.
+    - Ensure the claude output dir points to <test_dir>/analyze
+    - Ensure all parameters are correct
+
 """
 
     def prompt(self):

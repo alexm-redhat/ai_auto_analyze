@@ -1,5 +1,6 @@
+import json
 from dataclasses import dataclass
-from claude_utils import ClaudeConfig
+from common.claude_utils import ClaudeConfig
 
 
 @dataclass
@@ -13,54 +14,36 @@ class AnalyzeConfig:
     gpu_ops_filter: str = ""
 
 
-MODEL = "nvidia/Kimi-K2.5-NVFP4"
-PRECISION = "NVFP4"
-GPU_TYPE = "B200"
-ISL = 4
-OSL = 1024
-BATCH_SIZE = 1
+def add_analyze_args(parser):
+    parser.add_argument(
+        "--config", required=True, type=str, help="Path to JSON config file"
+    )
 
-VLLM = "vllm"
-SGLANG = "sglang"
-# TRT = "trt"
 
-VLLM_TEST_DIR = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_profile/kimi_results_stored/parse/test_results/nvidia__Kimi-K2.5-NVFP4-tp_8-isl_4-osl_1024-b_1/vllm"
-SGLANG_TEST_DIR = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_profile/kimi_results_stored/parse/test_results/nvidia__Kimi-K2.5-NVFP4-tp_8-isl_4-osl_1024-b_1/sgl"
-# TRT_TEST_DIR = "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_profile/results/parse/test_results/deepseek-ai__DeepSeek-V3.2-tp_8-isl_4-osl_1024-b_1-mode_none/trt"
+def load_config(config_path):
+    with open(config_path) as f:
+        return json.load(f)
 
-claude_config = ClaudeConfig(
-    # model="claude-opus-4-6",
-    model="claude-opus-4-6[1m]",
-    # model="claude-opus-4-5",
-    allowed_tools=["Read", "Write", "Bash"],
-    perm_mode="acceptEdits",  # "bypassPermissions",
-    cwd="/home/alexm-redhat/code/ai_auto_perf_analysis/auto_analyze/results",
-)
 
-# TODO: Now we need export CLAUDE_CODE_ALLOWED_PATHS=/home/alexm-redhat/code, remove this requirement
-analyze_configs = [
-    AnalyzeConfig(
-        model=MODEL,
-        precision=PRECISION,
-        gpu_type=GPU_TYPE,
-        framework_name=VLLM,
-        framework_source_code="/home/alexm-redhat/code/vllm",
-        test_dir=VLLM_TEST_DIR,
-    ),
-    AnalyzeConfig(
-        model=MODEL,
-        precision=PRECISION,
-        gpu_type=GPU_TYPE,
-        framework_name=SGLANG,
-        framework_source_code="/home/alexm-redhat/code/sglang",
-        test_dir=SGLANG_TEST_DIR,
-    ),
-    # AnalyzeConfig(
-    #     model=MODEL,
-    #     precision=PRECISION,
-    #     gpu_type=GPU_TYPE,
-    #     framework_name=TRT,
-    #     framework_source_code="/home/alexm-redhat/code/TensorRT-LLM",
-    #     test_dir=TRT_TEST_DIR,
-    # ),
-]
+def build_analyze_configs(config):
+    return [
+        AnalyzeConfig(
+            model=config["model"],
+            precision=config["precision"],
+            gpu_type=config["gpu_type"],
+            framework_name=fw["name"],
+            framework_source_code=fw["source_code"],
+            test_dir=fw["test_dir"],
+            gpu_ops_filter=fw.get("gpu_ops_filter", ""),
+        )
+        for fw in config["frameworks"]
+    ]
+
+
+def build_claude_config(config):
+    return ClaudeConfig(
+        model="claude-opus-4-6[1m]",
+        allowed_tools=["Read", "Write", "Bash"],
+        perm_mode="acceptEdits",
+        cwd=config["claude_output_dir"],
+    )

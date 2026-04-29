@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import ClassVar
 
-from auto_analyze.analyze_configs import AnalyzeConfig, VLLM
+from auto_analyze.analyze_configs import AnalyzeConfig
 
 
 @dataclass
@@ -525,9 +525,6 @@ Write and execute the Python script. Save the PDF to <output_file>.
         )
 
 
-# TODO: Remove
-#- For each framework, provide a single "phase lane" that annotates the median transformer block phases. Ensure this phase lane is immediately above the cuda stream lanes, not between them. Also, ensure the phase names are brief and clear. Also, ensure that there are NO GAPS between phases, i.e. every cuda stream operation should have an associated phase name sub-range in the phase lane.
-
 @dataclass
 class CombinedTracePrompt:
     model: str
@@ -620,7 +617,103 @@ Dump the new combined trace file to <output_file> in Claude's current working di
         )
 
 
+SUMMARY_PDF_FILE = "cmp_and_plan_summary.pdf"
+
 TRACE_COMBINED_FILE = "trace_combined_transformer_blocks.json"
+
+@dataclass
+class JiraTasksPrompt:
+    model: str
+    precision: str
+    gpu_type: str
+    isl: int
+    osl: int
+    batch_size: int
+    framework_names: list[str]
+    framework_source_codes: list[str]
+    transformer_blocks: list[str]
+    transformer_high_level_blocks: list[str]
+    test_dirs: list[str]
+    cmp_file: str
+    plan_file: str
+    output_file: str
+    prompt_template: ClassVar[str] = """
+<model> = {model}
+<precision> = {precision}
+<gpu_type> = {gpu_type}
+<isl> = {isl}
+<osl> = {osl}
+<batch_size> = {batch_size}
+<framework_names> = {framework_names} 
+<framework_source_codes> = {framework_source_codes}
+<transformer_blocks> = {transformer_blocks}
+<transformer_high_level_blocks> = {transformer_high_level_blocks}
+<test_dirs> = {test_dirs}
+<cmp_file> = {cmp_file}
+<plan_file> = {plan_file}
+<output_file> = {output_file}
+
+<jira_epyc> = "Auto generated tasks for vLLM improvement" (INFERENG-4600)
+<jira_team_value> = "INFERENG-6480"
+<jira_activity_type> = "Learning & Enablement"
+
+Make sure to do all work in Claude's current working directory.
+
+- The model benchmarked and compared is <model> in precision <precision> running on <gpu_type> gpu with ISL <isl>, OSL <osl>, and batch size <batch_size>. 
+- <framework_names> is a list of framework names
+- <framework_source_codes> is a list of framework source codes that match respectively to <framework_names>
+- <transformer_blocks> is a list of median transformer blocks that match respectively to <framework_names>
+- <transformer_high_level_blocks> is a list of high-level transformer block operations (correlated to source code) that match respectively to <framework_names>, and <transformer_blocks>.
+- The file <cmp_file> provides a performance comparison of a transformer block between the frameworks
+- The file <plan_file> provides an improvement plan for each performance issue for each framework
+- <test_dirs> is a list of test directories that match respectively to <framework_names>, where each test directory has:
+    - The file trace-*.sqlite - an nsys profile result file in SQLite format of the respective framework running <model> in precision <precision> on <gpu_type> gpu
+
+
+The goal of this task is to create a set of JIRA tasks for each improvement plan in <plan_file>. Do the following and think hard:
+- Analyze and understand in-depth the improvement plans in <plan_file>
+- Verify that epyc "Auto generated tasks for vLLM improvement" (INFERENG-4600) exists. If it does not exist, then STOP and DO NOT continue this task.
+- To represent the <plan_file> in JIRA, we will create a (master) task that will have sub-tasks, where each sub-task will represent an individual improvement proposal (from the plan).
+    - Create a (master) task as follows:
+        - The parent epyc of the master task must be <jira_epyc>.
+        - The team value must be <jira_team_value>.
+        - The activity type must be <jira_activity_type>.
+        - Name the task as: tasks_for_[model]_tp_$[num_gpus]_isl_[input_len]_osl_[output_len]_b_[concurrency]__TIME_[current_datetime]. Detect the test parameters from this specific test, and also use a timestamp for [current_datetime] that is formatted as YYYY-MM-DD-HH-MM-SECS (so that the folders can be sorted easily)
+        - Add a task description that describes in high-level the results of the improvement plan <plan_file>. Add any necessary info/details to make it clear for high-level executives and low-level programmers, so that the description provides a good picture of the results.
+    - For each specific improvement plan, create a sub-task as follows:
+        - The parent epyc of the master task must be <jira_epyc>.
+        - The team value must be <jira_team_value>.
+        - The activity type must be <jira_activity_type>.
+        - Name the task as: plan_[id]_[plan_topic] where the [id] is the serial id of the plan and the [plan_topic] is the topic of the plan.
+        - Add a sub-task description that describes this specific plan. Make sure to include:
+            - High-level description, including the general metrics of impact, difficulty and more.
+            - Step-by-step guide with code snippets (make sure to be consistent with what is inside <plan_file>)
+
+- Make sure that all new jira tasks and sub-tasks created are completely new and are not overriding any existing tasks or sub-tasks. I.e DO NOT modify anything existing in Jira currently.
+- Provide a summary of what was done
+
+"""
+
+    def prompt(self):
+        return self.prompt_template.format(
+            model=self.model,
+            precision=self.precision,
+            gpu_type=self.gpu_type,
+            isl=self.isl,
+            osl=self.osl,
+            batch_size=self.batch_size,
+            framework_names=self.framework_names,
+            framework_source_codes=self.framework_source_codes,
+            transformer_blocks=self.transformer_blocks,
+            transformer_high_level_blocks=self.transformer_high_level_blocks,
+            test_dirs=self.test_dirs,
+            cmp_file=self.cmp_file,
+            plan_file=self.plan_file,
+            output_file=self.output_file,
+        )
+
+
+JIRA_TASKS_FILE = "jira_tasks_output.txt"
 
 
 def gen_analyze_prompts(config: AnalyzeConfig):
@@ -786,7 +879,14 @@ def gen_plan_prompt(
 
 
 def gen_combined_trace_prompt(
-    model, precision, gpu_type, isl, osl, batch_size, configs: list[AnalyzeConfig]
+    model,
+    precision,
+    gpu_type,
+    isl,
+    osl,
+    batch_size,
+    configs: list[AnalyzeConfig],
+    target_framework: str,
 ):
     framework_names = [config.framework_name for config in configs]
     framework_source_codes = [config.framework_source_code for config in configs]
@@ -800,7 +900,9 @@ def gen_combined_trace_prompt(
         block_high_level_files.append(block_high_level_file)
 
     _, perf_cmp_file = gen_perf_compare_prompt(configs, block_files)
-    _, plan_file = gen_plan_prompt(configs, block_files, perf_cmp_file, VLLM)
+    _, plan_file = gen_plan_prompt(
+        configs, block_files, perf_cmp_file, target_framework
+    )
 
     combined_trace_prompt = CombinedTracePrompt(
         model=model,
@@ -820,3 +922,49 @@ def gen_combined_trace_prompt(
     )
 
     return combined_trace_prompt.prompt()
+
+
+def gen_jira_tasks_prompt(
+    model,
+    precision,
+    gpu_type,
+    isl,
+    osl,
+    batch_size,
+    configs: list[AnalyzeConfig],
+    target_framework: str,
+):
+    framework_names = [config.framework_name for config in configs]
+    framework_source_codes = [config.framework_source_code for config in configs]
+    test_dirs = [config.test_dir for config in configs]
+
+    block_files = []
+    block_high_level_files = []
+    for config in configs:
+        _, block_file, block_high_level_file = gen_analyze_prompts(config)
+        block_files.append(block_file)
+        block_high_level_files.append(block_high_level_file)
+
+    _, perf_cmp_file = gen_perf_compare_prompt(configs, block_files)
+    _, plan_file = gen_plan_prompt(
+        configs, block_files, perf_cmp_file, target_framework
+    )
+
+    jira_tasks_prompt = JiraTasksPrompt(
+        model=model,
+        precision=precision,
+        gpu_type=gpu_type,
+        isl=isl,
+        osl=osl,
+        batch_size=batch_size,
+        framework_names=framework_names,
+        framework_source_codes=framework_source_codes,
+        transformer_blocks=block_files,
+        transformer_high_level_blocks=block_high_level_files,
+        test_dirs=test_dirs,
+        cmp_file=perf_cmp_file,
+        plan_file=plan_file,
+        output_file=JIRA_TASKS_FILE,
+    )
+
+    return jira_tasks_prompt.prompt()

@@ -4,13 +4,11 @@ import time
 import asyncio
 import argparse
 
-from utils import Tee
-from claude_utils import claude_run
+from common.utils import setup_logging, safe_clean_dir
+from common.claude_utils import claude_run
 
-from claude_utils import ClaudeConfig
+from common.claude_utils import ClaudeConfig
 from auto_profile.parse_prompts import ParseResultsPrompt
-
-LOG_FILE = "__run_log_parse.txt"
 
 claude_config = ClaudeConfig(
     model="claude-opus-4-6",
@@ -24,7 +22,7 @@ claude_config = ClaudeConfig(
 def gen_parse_results_prompts(args):
     parse_results_prompt = ParseResultsPrompt(
         results_dir=args.results_dir,
-        output_dir=os.path.join(args.results_dir, args.output_dir),
+        output_dir=args.output_dir,
     )
 
     prompts = [parse_results_prompt.prompt()]
@@ -32,10 +30,7 @@ def gen_parse_results_prompts(args):
 
 
 if __name__ == "__main__":
-    # Set log file
-    log_file = open(LOG_FILE, "w")
-    original_stdout = sys.stdout
-    sys.stdout = Tee(original_stdout, log_file)
+    setup_logging("parse")
 
     # Parse args
     parser = argparse.ArgumentParser(description="Parse auto_profile results")
@@ -49,12 +44,28 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output-dir", required=True, type=str, help="Path to outputs directory"
     )
+    parser.add_argument(
+        "--override-output-dir",
+        action="store_true",
+        help="If set, allow output directory to exist and clean it before proceeding",
+    )
     args = parser.parse_args()
 
+    # Check that output_dir does not already exist (unless override is set)
+    output_dir = args.output_dir
+    if os.path.exists(output_dir):
+        if args.override_output_dir:
+            safe_clean_dir(output_dir)
+        else:
+            print(f"Error: output directory already exists: {output_dir}")
+            sys.exit(1)
+
+    os.makedirs(output_dir, exist_ok=True)
+
     # Set CWD
-    claude_config.cwd = args.results_dir
-    
-    # Run 
+    claude_config.cwd = os.getcwd()
+
+    # Run
     start_time = time.time()
     asyncio.run(claude_run(claude_config, gen_parse_results_prompts(args)))
     duration_time = time.time() - start_time

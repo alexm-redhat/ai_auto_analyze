@@ -1,8 +1,20 @@
 from __future__ import annotations
 
+import os
+import sys
 import shutil
 import subprocess
 from pathlib import Path
+
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LOGS_DIR = os.path.join(_PROJECT_ROOT, "logs")
+
+
+def setup_logging(name: str) -> None:
+    os.makedirs(LOGS_DIR, exist_ok=True)
+    log_path = os.path.join(LOGS_DIR, "run_{}.log".format(name))
+    log_file = open(log_path, "w")
+    sys.stdout = Tee(sys.stdout, log_file)
 
 
 class Tee(object):
@@ -19,6 +31,47 @@ class Tee(object):
     def flush(self):
         for f in self.files:
             f.flush()
+
+
+_SENSITIVE_DIRS = frozenset({
+    "/", "/bin", "/boot", "/dev", "/etc", "/home", "/lib", "/lib64",
+    "/media", "/mnt", "/opt", "/proc", "/root", "/run", "/sbin",
+    "/srv", "/sys", "/tmp", "/usr", "/var",
+})
+
+
+def safe_clean_dir(dir_path: str | Path) -> None:
+    """Remove all contents of a directory, leaving the directory itself."""
+    dir_path = Path(dir_path).expanduser().resolve()
+
+    resolved = str(dir_path)
+    if resolved in _SENSITIVE_DIRS:
+        raise ValueError(f"Refusing to clean sensitive directory: {resolved}")
+
+    if Path(resolved) == Path.home():
+        raise ValueError(f"Refusing to clean home directory: {resolved}")
+
+    # Must be at least 3 levels deep (e.g. /home/user/something)
+    if len(dir_path.parts) < 3:
+        raise ValueError(
+            f"Refusing to clean directory with fewer than 3 path components: {resolved}"
+        )
+
+    if not dir_path.exists():
+        return
+
+    if not dir_path.is_dir():
+        raise NotADirectoryError(f"Not a directory: {resolved}")
+
+    if dir_path.is_symlink():
+        raise ValueError(f"Refusing to clean symlink target: {resolved}")
+
+    print(f"Cleaning directory: {resolved}")
+    for child in dir_path.iterdir():
+        if child.is_dir() and not child.is_symlink():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
 
 
 def clear_vllm_source_tree(

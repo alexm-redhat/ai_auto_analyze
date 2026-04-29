@@ -26,7 +26,6 @@ if ! verify_cwd; then
 fi
 BASE_DIR="$(pwd)"
 
-RESULTS_DIR="results"
 DATASETS_DIR="datasets"
 TRACES_DIR="traces"
 
@@ -45,16 +44,18 @@ SGL="sgl"
 VLLM="vllm"
 TRT="trt"
 
-# Docker result dirs
+# Docker dirs
 DOCKER_AUTO_PROFILE_DIR="${DOCKER_BASE_DIR}/${AUTO_PROFILE_DIR}"
-DOCKER_RESULTS_DIR="${DOCKER_AUTO_PROFILE_DIR}/${RESULTS_DIR}"
-
-VLLM_DOCKER_RESULTS_DIR="${DOCKER_RESULTS_DIR}/${VLLM}"
-SGL_DOCKER_RESULTS_DIR="${DOCKER_RESULTS_DIR}/${SGL}"
-TRT_DOCKER_RESULTS_DIR="${DOCKER_RESULTS_DIR}/${TRT}"
 
 # General test configs
 NUM_WARMUPS=2
 NUM_WAVES=4
 NUM_TRACE_ITERS=50
+
+NSYS_DEFAULT_FLAGS=" \
+  -t cuda,nvtx \
+  -c cudaProfilerApi \
+  --cuda-graph-trace=node \
+  --trace-fork-before-exec=true \
+"
 

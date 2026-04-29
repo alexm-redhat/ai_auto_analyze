@@ -1,21 +1,21 @@
 #!/bin/bash
 
+INFRA_CONFIG="${1:?Usage: $0 <infra_config.json> <run_config.json>}"
+RUN_CONFIG="${2:?Usage: $0 <infra_config.json> <run_config.json>}"
 
 source auto_profile/utils.sh
-source auto_profile/profile_config.sh
+load_run_config "$INFRA_CONFIG" "$RUN_CONFIG"
 
-create_dir_if_missing ${DOCKER_RESULTS_DIR}
-create_clean_dir ${TRT_DOCKER_RESULTS_DIR}
+clean_dir_contents ${TRT_DOCKER_RESULTS_DIR}
 write_run_metadata ${TRT_DOCKER_RESULTS_DIR} ${TRT_DOCKER_IMAGE}
 
 log_info "Run profiles:"
 
 for p in "${PROFILES[@]}"; do
-    declare -n profile="$p"
-    model=${profile[model]}
-    gpu_ids=${profile[gpu_ids]}
-    input_len=${profile[input_len]}
-    output_len=${profile[output_len]}
+    model=$p
+    gpu_ids=${PROFILE_GPU_IDS[$p]}
+    input_len=${PROFILE_INPUT_LENS[$p]}
+    output_len=${PROFILE_OUTPUT_LENS[$p]}
     log_info "  Profiling:"
     log_info "    model      = ${model}"
     log_info "    gpu_ids    = ${gpu_ids}"
@@ -53,13 +53,12 @@ for p in "${PROFILES[@]}"; do
         ((num_requests = concurrency * NUM_WAVES))
         
         # Set extra options
-        mode=${MODE_NONE}
+        mode="none"
         yaml_flag=""
-            
-        if [[ -v profile[trt_mode] \
-                && -n "${profile[trt_mode]}" \
-                && "${profile[trt_mode]}" != "none" ]]; then
-            mode="${profile[trt_mode]}"
+
+        if [[ -n "${PROFILE_TRT_MODES[$p]}" \
+                && "${PROFILE_TRT_MODES[$p]}" != "none" ]]; then
+            mode="${PROFILE_TRT_MODES[$p]}"
             log_info "Set TRT MODE = ${mode}"
             yaml_file="${AUTO_PROFILE_DIR}/trt/trt_mode_${mode}.yaml"
             log_info "Add yaml file: ${yaml_file}"
@@ -107,7 +106,7 @@ for p in "${PROFILES[@]}"; do
         
         # Set profile env vars
         profile_prefix=""
-        if is_trt_profile_enabled; then
+        if is_trace_enabled trt; then
             log_info "TRT profile is enabled."
             
             start_iter=$(calc_start_iter ${NUM_WARMUPS} ${NUM_WAVES} ${output_len})
@@ -145,7 +144,7 @@ for p in "${PROFILES[@]}"; do
             env CUDA_VISIBLE_DEVICES=${gpu_ids} \
             ${run_cmd}
             
-        if is_trt_profile_enabled; then
+        if is_trace_enabled trt; then
             log_info "RUN PROFILE"
             run_and_log ${run_log_profile_filename} \
                 env CUDA_VISIBLE_DEVICES=${gpu_ids} \

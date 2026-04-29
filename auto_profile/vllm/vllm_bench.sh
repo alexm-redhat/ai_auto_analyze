@@ -1,20 +1,21 @@
 #!/bin/bash
 
-source auto_profile/utils.sh
-source auto_profile/profile_config.sh
+INFRA_CONFIG="${1:?Usage: $0 <infra_config.json> <run_config.json>}"
+RUN_CONFIG="${2:?Usage: $0 <infra_config.json> <run_config.json>}"
 
-create_dir_if_missing ${DOCKER_RESULTS_DIR}
-create_clean_dir ${VLLM_DOCKER_RESULTS_DIR}
+source auto_profile/utils.sh
+load_run_config "$INFRA_CONFIG" "$RUN_CONFIG"
+
+clean_dir_contents ${VLLM_DOCKER_RESULTS_DIR}
 write_run_metadata ${VLLM_DOCKER_RESULTS_DIR} ${VLLM_DOCKER_IMAGE}
 
 log_info "Run profiles:"
 
 for p in "${PROFILES[@]}"; do
-    declare -n profile="$p"
-    model=${profile[model]}
-    gpu_ids=${profile[gpu_ids]}
-    input_len=${profile[input_len]}
-    output_len=${profile[output_len]}
+    model=$p
+    gpu_ids=${PROFILE_GPU_IDS[$p]}
+    input_len=${PROFILE_INPUT_LENS[$p]}
+    output_len=${PROFILE_OUTPUT_LENS[$p]}
     log_info "  Profiling:"
     log_info "    model      = ${model}"
     log_info "    gpu_ids    = ${gpu_ids}"
@@ -39,11 +40,10 @@ for p in "${PROFILES[@]}"; do
             EXTRA_RUN_FLAGS=""
 
             # Set extra env vars
-            mode=${MODE_NONE}
-            if [[ -v profile[vllm_mode] \
-                && -n "${profile[vllm_mode]}" \
-                && "${profile[vllm_mode]}" != "none" ]]; then
-                mode=${profile[vllm_mode]}
+            mode="none"
+            if [[ -n "${PROFILE_VLLM_MODES[$p]}" \
+                && "${PROFILE_VLLM_MODES[$p]}" != "none" ]]; then
+                mode=${PROFILE_VLLM_MODES[$p]}
                 log_info "Set VLLM MODE = ${mode}"
                 source "${AUTO_PROFILE_DIR}/${VLLM}/${VLLM}_mode_${mode}.sh"
             fi
@@ -104,7 +104,7 @@ for p in "${PROFILES[@]}"; do
             profile_flag=""
             profile_json=""
             profile_prefix=""
-            if is_vllm_profile_enabled; then
+            if is_trace_enabled vllm; then
                 log_info "VLLM profile is enabled."
                 
                 num_warmups=0
@@ -160,7 +160,7 @@ for p in "${PROFILES[@]}"; do
                 env CUDA_VISIBLE_DEVICES=${gpu_ids} \
                 ${run_cmd}
             
-            if is_vllm_profile_enabled; then
+            if is_trace_enabled vllm; then
                 log_info "RUN PROFILE"
                 run_and_log ${run_log_profile_filename} \
                     env CUDA_VISIBLE_DEVICES=${gpu_ids} \

@@ -169,6 +169,7 @@ _run_docker() {
     -v ${BASE_DIR}:${DOCKER_BASE_DIR} \
     -v ${HF_HUB_CACHE}:"${DOCKER_HF_HUB_CACHE}" \
     --env "HF_HUB_CACHE=${DOCKER_HF_HUB_CACHE}" \
+    --env "HF_TOKEN=${HF_TOKEN}" \
     -p ${DOCKER_PORT}:${DOCKER_PORT} \
     --name ${name} \
     --entrypoint /bin/bash \
@@ -181,25 +182,30 @@ _run_docker() {
 run_docker() {
   local framework="$1"
   local image="$2"
-  local extra_flags="$3"
+  local extra_flags="${3:-}"
+  local infra_config="${4:-}"
+  local run_config="${5:-}"
 
   if [[ -z "${framework}" ]]; then
     log_error "No framework name provided"
     return 1
   fi
-  
+
   if [[ -z "${image}" ]]; then
     log_error "No container image provided"
     return 1
   fi
 
   local name="${framework}_auto_profile_${USER}"
-  
-  # source ${framework}/${framework}_config.sh
-  
+
+  local cmd="${AUTO_PROFILE_DIR}/${framework}/${framework}_bench.sh"
+  if [[ -n "$infra_config" && -n "$run_config" ]]; then
+    cmd="${cmd} ${infra_config} ${run_config}"
+  fi
+
   remove_docker_if_exists $name
 
-  _run_docker ${name} ${image} "${AUTO_PROFILE_DIR}/${framework}/${framework}_bench.sh" "${extra_flags}"
+  _run_docker ${name} ${image} "${cmd}" "${extra_flags}"
 }
 
 clean_dir_contents() {
@@ -444,16 +450,69 @@ calc_finish_iter() {
   echo $(( start_iter + offset ))
 }
 
-is_vllm_profile_enabled() {
-  [[ ${VLLM_ENABLE_PROFILE:-0} == 1 ]]
+make_results_dir_name() {
+  echo "results"
 }
 
-is_sgl_profile_enabled() {
-  [[ ${SGL_ENABLE_PROFILE:-0} == 1 ]]
+setup_results_dirs() {
+  local run_config="$1"
+
+  RESULTS_DIR="$(make_results_dir_name "$run_config")"
+
+  DOCKER_RESULTS_DIR="${DOCKER_AUTO_PROFILE_DIR}/${RESULTS_DIR}"
+  VLLM_DOCKER_RESULTS_DIR="${DOCKER_RESULTS_DIR}/${VLLM}"
+  SGL_DOCKER_RESULTS_DIR="${DOCKER_RESULTS_DIR}/${SGL}"
+  TRT_DOCKER_RESULTS_DIR="${DOCKER_RESULTS_DIR}/${TRT}"
 }
 
-is_trt_profile_enabled() {
-  [[ ${TRT_ENABLE_PROFILE:-0} == 1 ]]
+load_run_config() {
+  local infra_config="$1"
+  local run_config="$2"
+
+  if [[ -z "$infra_config" || -z "$run_config" ]]; then
+    log_error "Usage: load_run_config <infra_config.json> <run_config.json>"
+    return 1
+  fi
+
+  if [[ ! -f "$infra_config" ]]; then
+    log_error "Infra config file not found: $infra_config"
+    return 1
+  fi
+
+  if [[ ! -f "$run_config" ]]; then
+    log_error "Run config file not found: $run_config"
+    return 1
+  fi
+
+  eval "$(python3 "${AUTO_PROFILE_DIR}/parse_run_config.py" "$infra_config" "$run_config")"
+
+  setup_results_dirs "$run_config"
+
+  log_info "Loaded config: infra=$infra_config run=$run_config"
+  log_info "  RESULTS_DIR=${RESULTS_DIR}"
+  log_info "  VLLM_DOCKER_IMAGE=${VLLM_DOCKER_IMAGE}"
+  log_info "  SGL_DOCKER_IMAGE=${SGL_DOCKER_IMAGE}"
+  log_info "  TRT_DOCKER_IMAGE=${TRT_DOCKER_IMAGE}"
+  log_info "  PROFILES=( ${PROFILES[*]} )"
+  for _p in "${PROFILES[@]}"; do
+    log_info "    model=${_p}"
+    log_info "      gpu_ids=${PROFILE_GPU_IDS[$_p]}"
+    log_info "      input_len=${PROFILE_INPUT_LENS[$_p]} output_len=${PROFILE_OUTPUT_LENS[$_p]}"
+    log_info "      vllm_mode=${PROFILE_VLLM_MODES[$_p]} sgl_mode=${PROFILE_SGL_MODES[$_p]} trt_mode=${PROFILE_TRT_MODES[$_p]}"
+  done
+  log_info "  PROFILE_CONCURRENCIES=${PROFILE_CONCURRENCIES}"
+  log_info "  RUN_FRAMEWORKS=${RUN_FRAMEWORKS}"
+  log_info "  ENABLE_TRACES=${ENABLE_TRACES}"
+}
+
+is_framework_enabled() {
+  local fw="$1"
+  [[ " ${RUN_FRAMEWORKS} " == *" ${fw} "* ]]
+}
+
+is_trace_enabled() {
+  local fw="$1"
+  [[ " ${ENABLE_TRACES} " == *" ${fw} "* ]]
 }
 
 find_nsys_dir() {

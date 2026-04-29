@@ -1,6 +1,15 @@
 #!/bin/bash
 
-source auto_profile/utils.sh
-source auto_profile/profile_config.sh
+INFRA_CONFIG="${1:?Usage: $0 <infra_config.json> <run_config.json>}"
+RUN_CONFIG="${2:?Usage: $0 <infra_config.json> <run_config.json>}"
 
-run_docker ${TRT} ${TRT_DOCKER_IMAGE}
+source auto_profile/utils.sh
+load_run_config "$INFRA_CONFIG" "$RUN_CONFIG"
+
+nsys_flags=""
+if is_trace_enabled trt; then
+    nsys_dir=$(find_nsys_dir)
+    nsys_flags="-v ${nsys_dir}:/nsys:ro -e PATH=/nsys/bin:${PATH}"
+fi
+
+run_docker ${TRT} ${TRT_DOCKER_IMAGE} "${nsys_flags}" "${INFRA_CONFIG}" "${RUN_CONFIG}"

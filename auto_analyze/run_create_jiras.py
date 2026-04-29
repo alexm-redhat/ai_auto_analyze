@@ -11,10 +11,10 @@ from auto_analyze.analyze_configs import (
     build_analyze_configs,
     build_claude_config,
 )
-from auto_analyze.analyze_prompts import gen_combined_trace_prompt
+from auto_analyze.analyze_prompts import gen_jira_tasks_prompt
 
-def gen_combined_trace_step_prompts(config, analyze_configs):
-    combined_trace_prompt = gen_combined_trace_prompt(
+def gen_create_jiras_step_prompts(config, analyze_configs):
+    jira_tasks_prompt = gen_jira_tasks_prompt(
         model=config["model"],
         precision=config["precision"],
         gpu_type=config["gpu_type"],
@@ -25,13 +25,13 @@ def gen_combined_trace_step_prompts(config, analyze_configs):
         target_framework=config["target_framework"],
     )
 
-    return [combined_trace_prompt]
+    return [jira_tasks_prompt]
 
 
 if __name__ == "__main__":
-    setup_logging("combined_trace")
+    setup_logging("create_jiras")
 
-    parser = argparse.ArgumentParser(description="Generate combined trace")
+    parser = argparse.ArgumentParser(description="Create JIRA tasks")
     add_analyze_args(parser)
     args = parser.parse_args()
 
@@ -41,11 +41,11 @@ if __name__ == "__main__":
 
     start_time = time.time()
 
-    print("=== Combined Trace ===")
+    print("=== Create JIRA Tasks ===")
     asyncio.run(
         claude_run(
             claude_config,
-            gen_combined_trace_step_prompts(config, analyze_configs),
+            gen_create_jiras_step_prompts(config, analyze_configs),
         )
     )
 

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from claude_utils import ClaudeConfig
+from common.claude_utils import ClaudeConfig
 
 
 @dataclass
@@ -61,7 +61,6 @@ MEDIAN_TRANSFORMER_BLOCK_FILES = [
     "/home/alexm-redhat/code/ai_auto_perf_analysis/auto_analyze/results/sglang_median_block.txt",
 ]
 
-# TODO: Now we need export CLAUDE_CODE_ALLOWED_PATHS=/home/alexm-redhat/code, remove this requirement
 claude_config = ClaudeConfig(
     model="claude-opus-4-6[1m]",
     allowed_tools=["Read", "Write", "Bash"],

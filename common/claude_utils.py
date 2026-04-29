@@ -18,7 +18,7 @@ from claude_agent_sdk import (
 
 from claude_agent_sdk.types import StreamEvent
 
-import utils #  # noqa: F401
+import common.utils #  # noqa: F401
 
 @dataclass
 class ClaudeConfig:

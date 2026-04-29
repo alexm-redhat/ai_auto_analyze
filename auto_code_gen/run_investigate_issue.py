@@ -4,8 +4,8 @@ import argparse
 import asyncio
 
 from pathlib import Path
-from utils import Tee
-from claude_utils import claude_run
+from common.utils import Tee
+from common.claude_utils import claude_run
 
 from auto_code_gen.code_gen_configs import claude_config, code_gen_config
 from auto_code_gen.code_gen_prompts import (

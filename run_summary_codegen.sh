@@ -5,7 +5,7 @@ source auto_profile/utils.sh
 PRS_DIR="/home/alexm-redhat/code/ai_auto_perf_analysis/auto_code_gen/prs"
 
 # Run
-export CLAUDE_CODE_MAX_OUTPUT_TOKENS=120000
+source "$(dirname "$0")/env.sh"
 python -m auto_code_gen.run_summary \
     --frameworks sglang vllm \
     --framework-code-trace-files $PRS_DIR/sglang_code_trace.txt $PRS_DIR/vllm_code_trace.txt \
