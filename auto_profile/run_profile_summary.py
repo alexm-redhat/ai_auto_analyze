@@ -4,7 +4,7 @@ import time
 import asyncio
 import argparse
 
-from common.utils import setup_logging, safe_clean_dir
+from common.utils import setup_logging, safe_clean_dir, output_dir_from_run_config, PROFILE_RESULTS_DIR
 from common.claude_utils import claude_run
 
 from common.claude_utils import ClaudeConfig
@@ -19,10 +19,10 @@ claude_config = ClaudeConfig(
 )
 
 
-def gen_parse_results_prompts(args):
+def gen_parse_results_prompts(results_dir, output_dir):
     parse_results_prompt = ParseResultsPrompt(
-        results_dir=args.results_dir,
-        output_dir=args.output_dir,
+        results_dir=results_dir,
+        output_dir=output_dir,
     )
 
     prompts = [parse_results_prompt.prompt()]
@@ -36,13 +36,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Parse auto_profile results")
 
     parser.add_argument(
-        "--results-dir",
+        "--run-config",
         required=True,
         type=str,
-        help="Path to auto_profile results directory",
-    )
-    parser.add_argument(
-        "--output-dir", required=True, type=str, help="Path to outputs directory"
+        help="Path to run config JSON file (run_<test_name>.json)",
     )
     parser.add_argument(
         "--override-output-dir",
@@ -51,8 +48,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    # Check that output_dir does not already exist (unless override is set)
-    output_dir = args.output_dir
+    output_dir = output_dir_from_run_config(args.run_config)
     if os.path.exists(output_dir):
         if args.override_output_dir:
             safe_clean_dir(output_dir)
@@ -67,6 +63,6 @@ if __name__ == "__main__":
 
     # Run
     start_time = time.time()
-    asyncio.run(claude_run(claude_config, gen_parse_results_prompts(args)))
+    asyncio.run(claude_run(claude_config, gen_parse_results_prompts(PROFILE_RESULTS_DIR, output_dir)))
     duration_time = time.time() - start_time
     print("FINISHED ALL: total_duration = {}".format(duration_time))

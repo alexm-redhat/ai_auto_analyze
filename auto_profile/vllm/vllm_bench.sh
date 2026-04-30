@@ -1,10 +1,9 @@
 #!/bin/bash
 
-INFRA_CONFIG="${1:?Usage: $0 <infra_config.json> <run_config.json>}"
-RUN_CONFIG="${2:?Usage: $0 <infra_config.json> <run_config.json>}"
+RUN_CONFIG="${1:?Usage: $0 <run_config.json>}"
 
 source auto_profile/utils.sh
-load_run_config "$INFRA_CONFIG" "$RUN_CONFIG"
+load_run_config "$RUN_CONFIG"
 
 clean_dir_contents ${VLLM_DOCKER_RESULTS_DIR}
 write_run_metadata ${VLLM_DOCKER_RESULTS_DIR} ${VLLM_DOCKER_IMAGE}

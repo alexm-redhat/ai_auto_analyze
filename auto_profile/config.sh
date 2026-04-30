@@ -1,4 +1,5 @@
 AUTO_PROFILE_DIR="auto_profile"
+INFRA_CONFIG="${AUTO_PROFILE_DIR}/test_configs/infra_config.json"
 
 verify_cwd() {
     local cwd

@@ -9,6 +9,22 @@ from pathlib import Path
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOGS_DIR = os.path.join(_PROJECT_ROOT, "logs")
 
+PROFILE_RESULTS_DIR = "./auto_profile/results"
+_OUTPUT_DIR_PREFIX = "./auto_analyze/results/results_analyze_"
+
+
+def test_name_from_run_config(run_config: str) -> str:
+    basename = os.path.basename(run_config)
+    if not basename.startswith("run_") or not basename.endswith(".json"):
+        raise ValueError(
+            f"run_config filename must match run_<test_name>.json, got: {basename}"
+        )
+    return basename[len("run_"):-len(".json")]
+
+
+def output_dir_from_run_config(run_config: str) -> str:
+    return _OUTPUT_DIR_PREFIX + test_name_from_run_config(run_config)
+
 
 def setup_logging(name: str) -> None:
     os.makedirs(LOGS_DIR, exist_ok=True)

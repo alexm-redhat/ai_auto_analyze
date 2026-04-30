@@ -183,8 +183,7 @@ run_docker() {
   local framework="$1"
   local image="$2"
   local extra_flags="${3:-}"
-  local infra_config="${4:-}"
-  local run_config="${5:-}"
+  local run_config="${4:-}"
 
   if [[ -z "${framework}" ]]; then
     log_error "No framework name provided"
@@ -199,8 +198,8 @@ run_docker() {
   local name="${framework}_auto_profile_${USER}"
 
   local cmd="${AUTO_PROFILE_DIR}/${framework}/${framework}_bench.sh"
-  if [[ -n "$infra_config" && -n "$run_config" ]]; then
-    cmd="${cmd} ${infra_config} ${run_config}"
+  if [[ -n "$run_config" ]]; then
+    cmd="${cmd} ${run_config}"
   fi
 
   remove_docker_if_exists $name
@@ -466,16 +465,15 @@ setup_results_dirs() {
 }
 
 load_run_config() {
-  local infra_config="$1"
-  local run_config="$2"
+  local run_config="$1"
 
-  if [[ -z "$infra_config" || -z "$run_config" ]]; then
-    log_error "Usage: load_run_config <infra_config.json> <run_config.json>"
+  if [[ -z "$run_config" ]]; then
+    log_error "Usage: load_run_config <run_config.json>"
     return 1
   fi
 
-  if [[ ! -f "$infra_config" ]]; then
-    log_error "Infra config file not found: $infra_config"
+  if [[ ! -f "$INFRA_CONFIG" ]]; then
+    log_error "Infra config file not found: $INFRA_CONFIG"
     return 1
   fi
 
@@ -484,11 +482,11 @@ load_run_config() {
     return 1
   fi
 
-  eval "$(python3 "${AUTO_PROFILE_DIR}/parse_run_config.py" "$infra_config" "$run_config")"
+  eval "$(python3 "${AUTO_PROFILE_DIR}/parse_run_config.py" "$INFRA_CONFIG" "$run_config")"
 
   setup_results_dirs "$run_config"
 
-  log_info "Loaded config: infra=$infra_config run=$run_config"
+  log_info "Loaded config: infra=$INFRA_CONFIG run=$run_config"
   log_info "  RESULTS_DIR=${RESULTS_DIR}"
   log_info "  VLLM_DOCKER_IMAGE=${VLLM_DOCKER_IMAGE}"
   log_info "  SGL_DOCKER_IMAGE=${SGL_DOCKER_IMAGE}"

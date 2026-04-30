@@ -3,20 +3,20 @@
 set -euo pipefail
 
 usage() {
-    echo "Usage: $0 <config.sh> <datetime>"
+    echo "Usage: $0 <run_config> <datetime>"
     echo ""
     echo "Schedules run_all.sh to execute at the specified date/time."
     echo "Before running, verifies that the required GPUs have no active processes."
     echo ""
     echo "Arguments:"
-    echo "  config.sh   The config file to pass to run_all.sh (e.g., config_deepseek_r1_nvfp4.sh)"
+    echo "  run_config  Path to run config JSON (e.g., ./auto_profile/test_configs/run_deepseek_r1_nvfp4.json)"
     echo "  datetime    When to run, in any format accepted by 'date -d', e.g.:"
     echo "              '2026-05-01 03:00'    specific date and time"
     echo "              'tomorrow 14:30'      relative date"
     echo "              '2026-05-01T03:00:00' ISO format"
     echo ""
     echo "Example:"
-    echo "  $0 config_deepseek_r1_nvfp4.sh '2026-05-01 03:00'"
+    echo "  $0 ./auto_profile/test_configs/run_deepseek_r1_nvfp4.json '2026-05-01 03:00'"
     exit 1
 }
 
@@ -24,21 +24,16 @@ if [ $# -ne 2 ]; then
     usage
 fi
 
-CONFIG_SH="$1"
+RUN_CONFIG="$1"
 SCHEDULED_TIME="$2"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-if [ ! -f "$CONFIG_SH" ]; then
-    echo "Error: config file not found: $CONFIG_SH"
+if [ ! -f "$RUN_CONFIG" ]; then
+    echo "Error: run config not found: $RUN_CONFIG"
     exit 1
 fi
 
-source "$CONFIG_SH"
-
-if [ -z "${test_name:-}" ]; then
-    echo "Error: config file does not define 'test_name'"
-    exit 1
-fi
+test_name=$(python3 -c "from common.utils import test_name_from_run_config; print(test_name_from_run_config('$RUN_CONFIG'))")
 
 TARGET_EPOCH=$(date -d "$SCHEDULED_TIME" +%s 2>/dev/null)
 if [ $? -ne 0 ] || [ -z "$TARGET_EPOCH" ]; then
@@ -53,13 +48,7 @@ if [ "$TARGET_EPOCH" -le "$CURRENT_EPOCH" ]; then
     exit 1
 fi
 
-RUN_CONFIG="${SCRIPT_DIR}/auto_profile/test_configs/run_${test_name}.json"
 INFRA_CONFIG="${SCRIPT_DIR}/auto_profile/test_configs/infra_config.json"
-
-if [ ! -f "$RUN_CONFIG" ]; then
-    echo "Error: run config not found: $RUN_CONFIG"
-    exit 1
-fi
 
 get_required_gpu_ids() {
     python3 -c "
@@ -137,7 +126,7 @@ WAIT_SECONDS=$((TARGET_EPOCH - CURRENT_EPOCH))
 TARGET_DISPLAY=$(date -d "@$TARGET_EPOCH" '+%Y-%m-%d %H:%M:%S')
 
 echo "=== Scheduled Run ==="
-echo "Config:         $CONFIG_SH"
+echo "Run config:     $RUN_CONFIG"
 echo "Test:           $test_name"
 echo "Required GPUs:  $REQUIRED_GPUS"
 echo "Scheduled for:  $TARGET_DISPLAY"
@@ -158,7 +147,7 @@ for ((attempt=1; attempt<=MAX_RETRIES; attempt++)); do
     if busy=$(check_gpus_free); then
         echo "$(date '+%Y-%m-%d %H:%M:%S') - All required GPUs are free. Starting run_all.sh"
         echo ""
-        exec "${SCRIPT_DIR}/run_all.sh" "$CONFIG_SH"
+        exec "${SCRIPT_DIR}/run_all.sh" "$RUN_CONFIG"
     else
         echo "$(date '+%Y-%m-%d %H:%M:%S') - GPUs in use: $busy (attempt $attempt/$MAX_RETRIES, retrying in ${RETRY_INTERVAL}s)"
         sleep "$RETRY_INTERVAL"
