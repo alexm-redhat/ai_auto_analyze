@@ -2,7 +2,7 @@
     "profiles": [
         {
             "model": "nvidia/Kimi-K2.5-NVFP4",
-            "gpu_ids": "gpu_ids_4",
+            "gpu_ids": "gpu_ids_8",
             "exec_mode": "pure_decode",
             "modes": ["vllm_kimi_k25_nvfp4_b200", "sgl_kimi_k25_nvfp4_b200"]
         }
