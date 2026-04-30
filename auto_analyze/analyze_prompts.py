@@ -653,8 +653,8 @@ class JiraTasksPrompt:
 <plan_file> = {plan_file}
 <output_file> = {output_file}
 
-<jira_epyc> = "Auto generated tasks for vLLM improvement" (INFERENG-4600)
-<jira_team_value> = "INFERENG-6480"
+<jira_epyc> = "Auto generated tasks for vLLM improvement"
+<jira_team_value> = INFERENG Runtime
 <jira_activity_type> = "Learning & Enablement"
 
 Make sure to do all work in Claude's current working directory.
@@ -671,23 +671,53 @@ Make sure to do all work in Claude's current working directory.
 
 
 The goal of this task is to create a set of JIRA tasks for each improvement plan in <plan_file>. Do the following and think hard:
+- Use JIRA MCP for this task
+- The <plan_file> is associated with results_[test_name]/test_results/[test_name_with_batch] test directory (name it <plan_test_dir>). This directory includes:
+    - run logs (non-profile and profile)
+    - NSYS traces per-framework
+    - Analyze results in ./analyze
+        
+- Copy the [test_name_with_batch] subdirectory from <plan_test_dir> to /raid/engine/auto_analyze/ and remember links that use the /raid/... location to the following pieces:
+    - Links to run logs (not run log profile ones)
+    - Links to NSYS trace files (nsys-rep files only)
+    - Link to the combined trace (json file only)
+    - Link to the summary PDF (pdf file only)
+
 - Analyze and understand in-depth the improvement plans in <plan_file>
-- Verify that epyc "Auto generated tasks for vLLM improvement" (INFERENG-4600) exists. If it does not exist, then STOP and DO NOT continue this task.
+- Verify that epyc <jira_epyc> exists. If it does not exist, then STOP and DO NOT continue this task.
 - To represent the <plan_file> in JIRA, we will create a (master) task that will have sub-tasks, where each sub-task will represent an individual improvement proposal (from the plan).
     - Create a (master) task as follows:
         - The parent epyc of the master task must be <jira_epyc>.
         - The team value must be <jira_team_value>.
         - The activity type must be <jira_activity_type>.
         - Name the task as: tasks_for_[model]_tp_$[num_gpus]_isl_[input_len]_osl_[output_len]_b_[concurrency]__TIME_[current_datetime]. Detect the test parameters from this specific test, and also use a timestamp for [current_datetime] that is formatted as YYYY-MM-DD-HH-MM-SECS (so that the folders can be sorted easily)
-        - Add a task description that describes in high-level the results of the improvement plan <plan_file>. Add any necessary info/details to make it clear for high-level executives and low-level programmers, so that the description provides a good picture of the results.
+        - Add a task description that describes:
+            - High-level results of the improvement plan <plan_file>. Add any important details to make it clear and crisp for high-level executives and low-level programmers, so that the description provides a good picture of the results.
+            - Info about the per-framework run metadata (can be fetched from the metadata files in results_[test_name]/test_results/) which includes:
+                - Docker image used
+                - Execution time 
+                - OS type
+                - Number of GPUs used and their type
+        - In the description provide full links (based on previously remembered links) to:
+            - General links:
+                - Per-framework execution run logs (not profile run logs)
+                - Per-framework NSYS trace files (nsys-rep)
+                - Combined trace (json file)
+                - Summary PDF file
+            - Also state that all intermediate analysis results are in the related "analysis" sub-directory, which includes: 
+                - Per-framework high-level transformer blocks
+                - Per-framework low-level GPU kernel => high-level source-code correlated transformer blocks
+                - Per-framework median transformer block
+                - Cross-framework transformer block comparison file
+                - Improvement plan file for vLLM
+        - For the links mention on what machine they reside: hostname and ip address 
     - For each specific improvement plan, create a sub-task as follows:
-        - The parent epyc of the master task must be <jira_epyc>.
+        - The parent task is the master task from above.
         - The team value must be <jira_team_value>.
-        - The activity type must be <jira_activity_type>.
         - Name the task as: plan_[id]_[plan_topic] where the [id] is the serial id of the plan and the [plan_topic] is the topic of the plan.
         - Add a sub-task description that describes this specific plan. Make sure to include:
             - High-level description, including the general metrics of impact, difficulty and more.
-            - Step-by-step guide with code snippets (make sure to be consistent with what is inside <plan_file>)
+            - Step-by-step guide with code snippets and maximum details per-step so that expert programmer can execute on it (make sure to be consistent with what is inside <plan_file>)
 
 - Make sure that all new jira tasks and sub-tasks created are completely new and are not overriding any existing tasks or sub-tasks. I.e DO NOT modify anything existing in Jira currently.
 - Provide a summary of what was done

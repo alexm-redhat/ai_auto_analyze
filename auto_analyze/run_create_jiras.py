@@ -38,6 +38,7 @@ if __name__ == "__main__":
     config = load_config(args.config)
     analyze_configs = build_analyze_configs(config)
     claude_config = build_claude_config(config)
+    claude_config.allowed_tools.append("mcp__mcp-atlassian__*")
 
     start_time = time.time()
 

@@ -8,15 +8,14 @@ fi
 source "$1"
 source "$(dirname "$0")/env.sh"
 
-# ./run_profile_core.sh \
-#     ./auto_profile/test_configs/infra_config.json \
-#     ./auto_profile/test_configs/run_${test_name}.json \
+./run_profile_core.sh \
+    ./auto_profile/test_configs/infra_config.json \
+    ./auto_profile/test_configs/run_${test_name}.json \
 
-# Parse
-# python -m auto_profile.run_summary \
-#     --results-dir ./auto_profile/results \
-#     --output-dir ${output_dir} \
-#     --override-output-dir \
+python -m auto_profile.run_summary \
+    --results-dir ./auto_profile/results \
+    --output-dir ${output_dir} \
+    --override-output-dir \
 
 # Analyze
 for config_file in ${output_dir}/analyze_*.json; do
