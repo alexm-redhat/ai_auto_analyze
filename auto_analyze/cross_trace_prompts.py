@@ -41,13 +41,11 @@ Do the following and think hard:
 - Read all median transformer block files from [transformer_blocks].
 - Match the sequence of operations of each median transformer block with the sequence of operations of other median transformer blocks, so that it will be possible to compare all of the median transformer blocks. Base the matching on the high-level implementation details of how transformer blocks are implemented. Ensure to take into account the separate GPU streams and their start and end synchronization points.
 - Analyze in-depth and compare in-detail the performance of the matched median transformer blocks, in order to find the performance differences.
-- Inside [transformer_blocks] there is also performance and timing information of the components that are not the transformer blocks, and also have effect on the inference pass total latency:
-    - Analyze and compare these components in-detail to understand their effect
-- Summarize in a single table all of the found performance differences, on both the transformer block level and on the non-transformer block level (the general system overhead). For each difference, provide:
+- Summarize in a single table all of the found performance differences. For each difference, provide:
     - a short description of the difference.
     - a short source code reference for all traces.
     - a short description how each trace can improve vs the other.
-- Ensure that the summary table covers the full transformer block GPU operation sequences with their high-level correlations, while properly correlating separate GPU streams, and also fully covers the non-transformer block pieces with full details that necessary to understand and pinpoint the differences.
+- Ensure that the summary table covers the full transformer block GPU operation sequences with their high-level correlations, while properly correlating separate GPU streams.
 - Dump results to [output_file] in the current working directory, including the summary table and other relevant information.
 
 """
@@ -129,12 +127,7 @@ Produce a FULL EXPLANATION of the performance differences FROM THE PERSPECTIVE O
    - Why [target_framework] is slower/faster for this specific operation
    - Quantified time difference (absolute and percentage)
 
-3. SYSTEM OVERHEAD DIFFERENCES
-   - Non-transformer-block overhead comparison
-   - Scheduling, synchronization, and framework-level differences
-   - Impact on total inference latency
-
-4. ROOT CAUSE SUMMARY
+3. ROOT CAUSE SUMMARY
    - Ranked list of all performance differences (largest impact first)
    - For each: root cause category (algorithmic, implementation, configuration, kernel selection)
    - Clear technical explanation of WHY the difference exists
