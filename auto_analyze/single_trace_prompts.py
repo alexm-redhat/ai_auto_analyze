@@ -91,15 +91,16 @@ Read and analyze in-detail the source code to detect the pieces that implement t
 For each transformer block type:
 - Find the sequence of operations by reading the decoder layer's forward() method and all sub-modules it calls.
 - Each operation should be a distinct logical compute step (e.g. layernorm, projection GEMM, attention, quantization, allreduce, activation function).
-- Note fusions: where the framework or compiler fuses multiple logical steps into one operation (e.g. allreduce + layernorm + quantize fused into one call).
-- Note stream parallelization: where operations run on different CUDA streams concurrently.
-- Note cross-layer boundary effects: where the last operation of one block is fused with the first operation of the next block.
-- For each operation provide: source code reference (file:line), what it computes, and any relevant details (dimensions, data types, parallelism).
+- Note fusions, stream parallelization, and cross-layer boundary effects.
+- For each operation provide: source code reference (file:line), what it computes, and relevant details.
+
+EXECUTION MODES:
+Different execution modes, (1) prefill-only, (2) decode-only or (3) mixed, often take different code paths and produce different kernel sequences. Produce a different transformer block table for each mode.
 
 OUTPUT FORMAT:
 Dump to [output_file] a well-structured human-readable text file with:
 
-Per block type: a section with block type name, layer range, and a properly aligned pipe-separated table where each row is one operation with columns: index, operation name, source code reference, execution details. Ensure all "|" column separators are aligned across every row.
+For each combination of (block type x execution mode), a separate section with block type name, layer range, execution mode, and a properly aligned pipe-separated table where each row is one operation with columns: index, operation name, source code reference, execution details, and possible kernel names. Ensure all "|" column separators are aligned across every row. Each table must be self-contained — do not combine multiple block types or execution modes into a single table.
 
 """
 
@@ -209,7 +210,7 @@ For each distinct GPU kernel name that appears in [gpu_ops_txt_file]:
 - Search the source code at <framework_source_code> to find where this kernel is launched.
 - Trace the call chain from the kernel launch point UP to the decoder layer's forward() method.
 - Determine which high-level transformer block operation this kernel implements.
-- Use the context of surrounding operations (what comes before and after in the GPU ops sequence) to disambiguate kernels that could serve multiple roles.
+- Record the kernel's identifying signature: kernel name, CUDA stream ID, and grid dimensions. This triplet (kernel_name, stream, grid) is what uniquely identifies a kernel's role — NOT its time-sorted position within the block.
 - Cross-reference with [high_level_ops_file] to validate your finding, but trust your source code analysis if there is a conflict.
 
 IMPORTANT: The [high_level_ops_file] from the previous step provides a SUMMARY of the expected high-level operations, but it may have missed operations, mis-identified kernel names, or made errors. YOUR analysis here must be MORE thorough because:
@@ -217,20 +218,24 @@ IMPORTANT: The [high_level_ops_file] from the previous step provides a SUMMARY o
 2. You can see the sequence and context of surrounding operations.
 3. You have the high-level summary as a starting reference point.
 
+CRITICAL — MULTI-STREAM AWARENESS:
+Operations on different CUDA streams run concurrently and their relative time-ordering varies between blocks due to GPU scheduling jitter. For example, a kernel on stream 3649 may appear before or after a kernel on stream 23 in the time-sorted list, even though both are always present. You MUST assign high_level_op names based on the kernel's identity (kernel_name, stream, grid), NOT based on its positional index in the time-sorted sequence. The same kernel on the same stream always gets the same high_level_op name, regardless of where it falls relative to operations on other streams.
+
 STEP 2 — BLOCK BOUNDARY DETECTION:
 - Using your kernel-to-operation mappings from Step 1, identify where each transformer block starts and ends in the GPU ops sequence.
-- A transformer block starts with its FIRST operation and ends with its LAST operation.
-- Verify that the operations within each detected block follow the expected order from your analysis.
-- BEWARE OF AMBIGUOUS BOUNDARY KERNELS: The same kernel type may appear multiple times within a single transformer block. Look at WHAT FOLLOWS each candidate boundary kernel to determine if it's a block start or a mid-block operation.
+- The block boundaries must be consistent with BOTH [high_level_ops_file] AND the decoder layer's forward() method in the source code. Cross-check both to confirm.
+- When the same kernel name appears multiple times within a block serving different roles, disambiguate by examining the surrounding operations in the sequence to determine which occurrence corresponds to which role in the forward() method.
+- After detecting boundaries, validate each block: verify that the first and last operations match what [high_level_ops_file] and the source code say the block should start and end with. If they don't match, the boundary is wrong — shift it and re-detect.
 
 STEP 3 — CLASSIFICATION AND WARMUP:
 - Classify each block by type. Flag first 2 and last 2 as WARMUP/COOLDOWN, rest as REPRESENTATIVE.
 
 STEP 4 — PER-BLOCK CORRELATION:
 - For each block, list every GPU operation with its correlated high-level operation name.
+- Assign high_level_op names by matching the kernel's identity (kernel_name, stream, grid) to the mapping built in Step 1 — NOT by positional index. The same kernel on the same stream always gets the same high_level_op name across all blocks.
 - Each kernel must have a UNIQUE specific high_level_op name within its block.
 - The high_level_op name must be descriptive enough to understand what the operation does (e.g. "q_b_proj_gemm", "moe_gate_router_gemm", "fused_allreduce_rms_norm_fp4_quant"), but concise — aim for 3-6 words in snake_case, max ~50 characters.
-- VALIDATE: the operation sequence within each block must follow a logical order consistent with the decoder layer's forward() method.
+- VALIDATE: within each stream, the operation sequence must follow a logical order consistent with the decoder layer's forward() method. Operations on different streams may interleave in any time order.
 
 STEP 5 — PER-BLOCK TIMING:
 - Calculate wall_time (from first op start to last op end), compute_time (sum of all op durations), idle_time, and idle_pct per block.
@@ -240,8 +245,8 @@ Perform a thorough validation across ALL blocks and ALL operations:
 
 a. BLOCK-LEVEL CONSISTENCY:
    - Verify that all blocks of the same type have the SAME number of operations.
-   - Verify that all blocks of the same type have the SAME sequence of high_level_op names in the same order.
-   - If any block differs in op count or sequence from the others of its type, flag it as an anomaly and investigate — either the block boundary is wrong or an operation was missed/misclassified.
+   - Verify that all blocks of the same type have the SAME SET of (high_level_op, kernel_name, stream) tuples. The time-ordering of operations across different streams may vary between blocks — this is normal. But operations within the same stream must appear in the same relative order.
+   - If any block has a different kernel at a given (high_level_op, stream) than other blocks, it is a misclassification — the correlation used positional matching instead of kernel identity matching. Fix it.
 
 b. ZERO UNCORRELATED OPERATIONS:
    - Every single GPU operation in [gpu_ops_txt_file] must be accounted for — either assigned to a transformer block or explicitly classified as an inter-block operation (e.g. embedding, sampling, LM head, scheduling overhead).
@@ -260,7 +265,7 @@ STEP 8 — WRITE OUTPUTS:
 
 FILE 1 — [output_file]: Structured text with:
     - Header (model, framework, GPU, block counts, warmup/cooldown, consistency)
-    - Properly aligned pipe-separated per-block tables where each kernel has columns for:
+    - A FULL properly aligned pipe-separated table for EACH AND EVERY detected block (not just the median — ALL blocks including warmup and cooldown). Each table has columns for:
         - Unique high_level_op (do not skip)
         - source_code_ref: the file:line references where this kernel is launched (do not skip, do not truncate)
         - source_code_explanation: a detailed explanation of what this kernel does and its context in the call chain (use a long text line if needed — do not truncate)
@@ -275,7 +280,7 @@ VERIFICATION CHECKLIST:
 - [ ] Both output files generated
 - [ ] Every GPU op accounted for
 - [ ] Block boundaries are correct: verified by source code analysis, not just pattern matching
-- [ ] Operation order within each block matches the decoder layer's forward() method
+- [ ] Operation order within each block matches the decoder layer's forward() method. Make sure this for EVERY block (based on its type).
 - [ ] Every kernel has UNIQUE high_level_op name within its block, determined by source code deep-dive
 - [ ] Warmup/cooldown flagged, median selected correctly
 - [ ] Source code was consulted for EACH distinct kernel type, not just the ones listed in [high_level_ops_file]
@@ -352,6 +357,13 @@ Before writing the output, review your analysis:
 - Verify that no proposal conflicts with the active execution context (CUDA graphs, torch.compile, etc.).
 
 Now, write the output document.
+
+FORMATTING RULES — apply throughout the entire output:
+- Use clear section headers and consistent indentation.
+- Bullet points and numbered lists must have each item on its own line — never concatenate multiple bullets into a single continuous paragraph.
+- Use blank lines between sections, between list items when they contain multi-line content, and before/after tables.
+- Tables must be properly aligned with consistent column widths.
+- The output should be easy to scan and read — a reader should be able to jump to any section and immediately understand the structure.
 
 The document is structured from high-level overview down to deep details. Produce the following sections in order:
 
