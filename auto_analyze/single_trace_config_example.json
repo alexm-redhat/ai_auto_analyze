@@ -1,0 +1,18 @@
+{
+    "framework_name": "vllm",
+    "model": "nvidia/DeepSeek-R1-NVFP4",
+    "gpu_type": "B200",
+    "batch_size_range": "1",
+    "prefill_size_range": "4",
+    "output_size_range": "1024",
+    "trace_file": "/path/to/trace-vllm-nvidia__DeepSeek-R1-NVFP4-tp_4-isl_4-osl_1024-b_1.nsys-rep",
+    "framework_source_code": "/path/to/vllm",
+    "run_command": "python -m vllm.entrypoints.openai.api_server --model nvidia/DeepSeek-R1-NVFP4 --tensor-parallel-size 4",
+    "run_log": "/path/to/run-log-vllm-nvidia__DeepSeek-R1-NVFP4-tp_4-isl_4-osl_1024-b_1.txt",
+    "trace_gpu_focus": "0",
+    "high_level_focus": "The traces provided are only for pure decode operations (no prefill). Focus on decode performance for low batch sizes, specifically transformer block GPU kernel performance",
+    "perf_analysis_focus": null,
+    "analyze_non_block_ops": true,
+    "output_dir": "/path/to/single_trace_output/vllm",
+    "max_gpu_ops": 1000
+}

@@ -163,13 +163,15 @@ async def claude_run(claude_config: ClaudeConfig, prompts: list[str]):
     )
 
     async with ClaudeSDKClient(options=options) as client:
+        prompt_step = 0
         for i, prompt in enumerate(prompts):
             if isinstance(prompt, dict):
                 cmd = prompt["cmd"]
                 print("{} RUN CMD: {} {}".format(Fore.GREEN, cmd, Style.RESET_ALL))
                 eval(cmd)
                 continue
-            
+
+            prompt_step += 1
             start_time = time.time()
 
             print("{} SEND QUERY PROMPT:{}".format(Fore.GREEN, Style.RESET_ALL))
@@ -205,4 +207,7 @@ async def claude_run(claude_config: ClaudeConfig, prompts: list[str]):
             )
 
             duration_time = time.time() - start_time
-            print("FINISHED STEP {}: duration = {}".format(i + 1, duration_time))
+            mins, secs = divmod(int(duration_time), 60)
+            hrs, mins = divmod(mins, 60)
+            human_time = f"{hrs}h {mins}m {secs}s" if hrs else f"{mins}m {secs}s"
+            print("FINISHED STEP {}: duration = {:.1f}s ({})".format(prompt_step, duration_time, human_time))

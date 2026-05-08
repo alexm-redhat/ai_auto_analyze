@@ -1,0 +1,21 @@
+{
+    "trace_results": [
+        {
+            "trace_id": "vllm",
+            "framework_name": "vllm",
+            "framework_source_code": "/path/to/vllm",
+            "result_dir": "/path/to/single_trace_output/vllm"
+        },
+        {
+            "trace_id": "sglang",
+            "framework_name": "sglang",
+            "framework_source_code": "/path/to/sglang",
+            "result_dir": "/path/to/single_trace_output/sglang"
+        }
+    ],
+    "analysis_type": "cross-framework",
+    "target_trace_id": "vllm",
+    "model": "nvidia/DeepSeek-R1-NVFP4",
+    "gpu_type": "B200",
+    "output_dir": "/path/to/cross_trace_output"
+}
