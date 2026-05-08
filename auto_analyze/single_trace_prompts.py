@@ -386,7 +386,11 @@ The document is structured from high-level overview down to deep details. Produc
 4. MEDIAN BLOCK OPERATIONS TABLE WITH IMPROVEMENTS
    THIS IS THE MOST IMPORTANT SECTION — it provides the at-a-glance overview that readers will focus on.
 
-   Produce a properly aligned pipe-separated table with ALL operations from [median_block_file] in execution order. Ensure all columns are aligned using consistent column widths. Columns:
+   Produce a table with ALL operations from [median_block_file] in execution order.
+
+   ALIGNMENT IS CRITICAL: First compute the maximum width of each column across all rows, then pad every cell to that width. Every "|" separator must line up vertically across all rows including the header. Use fixed-width formatting (e.g., printf-style or f-string padding) — do not rely on tab characters.
+
+   Columns:
    | Idx | High-Level Op | Dur (us) | % Blk | Stream | Proposal | Impact % | Improvement Summary | Low-Level Kernel | Details |
 
    Column descriptions:
@@ -399,11 +403,10 @@ The document is structured from high-level overview down to deep details. Produc
    - Impact %: estimated savings as percentage of total block wall time
    - Improvement Summary: one-line explanation of what to do
    - Low-Level Kernel: the actual GPU kernel name (short_name from trace)
-   - Details: additional context that helps understand the improvement — this can be longer text, do not truncate
+   - Details: additional context that helps understand the improvement — do not truncate
 
    Rules:
    - Every row must have a proposal. Even if the kernel is already near-optimal, propose something (e.g., "Could save ~0.1us via fusion with adjacent op" or "Near-optimal; consider stream overlap"). Small gains compound.
-   - Keep all column separators "|" aligned across every row.
 
    After the table, include a TOTALS row:
    ```
@@ -424,22 +427,12 @@ The document is structured from high-level overview down to deep details. Produc
    c. ROOT CAUSE — Why it is slow, grounded in source code. Reference specific files and lines.
    d. PROPOSED FIX — What to change.
       - Type: "kernel_fusion", "kernel_replacement", "scheduling", "config_tuning", or "algorithmic".
-      - Step-by-step implementation guide. Each step must be concrete and actionable:
+      - Detailed step-by-step implementation guide. This must be professional and thorough enough for a developer to execute on. For each step:
         1. State what to change and where (file:line).
-        2. Show a BEFORE snippet: the actual current code from the source (5-15 lines, enough to see context).
-        3. Show an AFTER snippet: the proposed modified code with the change applied.
-        4. Briefly explain why the change helps.
-        Example format:
-        ```
-        Step 1: Fuse RMSNorm + residual add
-          File: vllm/model_executor/layers/layernorm.py:42-48
-          BEFORE:
-            norm_out = rms_norm(hidden_states, weight)
-            output = norm_out + residual
-          AFTER:
-            output = fused_add_rms_norm(hidden_states, residual, weight)
-          Why: Eliminates one kernel launch and one intermediate buffer.
-        ```
+        2. Explain the technical rationale: why the current code is suboptimal and what the fix achieves.
+        3. Show a BEFORE snippet: the actual current code from the source (10-20 lines, enough to show the full context of the change including surrounding logic, function signature, and relevant variables).
+        4. Show an AFTER snippet: the proposed modified code with the change applied, including any new imports, helper functions, or API calls needed.
+        5. Explain the expected effect: what changes in the kernel launch pattern, data flow, or scheduling.
    e. IMPACT ESTIMATE — Derived from actual trace data:
       "<operation>: <current_ns> ns -> <projected_ns> ns (savings: <saved_ns> ns, <pct>% of block wall time)"
    f. Difficulty: low / medium / high
