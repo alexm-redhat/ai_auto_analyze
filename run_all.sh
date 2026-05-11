@@ -76,8 +76,7 @@ for test_dir in "${test_results_dir}"/*/; do
     echo ""
     echo "--- Cross-trace analysis ---"
     python -m auto_analyze.run_cross_trace \
-        --config "${cross_config}" \
-        --clean
+        --config "${cross_config}"
 
     # Extract the cross-trace output directory from the config
     cross_output_dir=$(python -c "import json; print(json.load(open('${cross_config}'))['output_dir'])")

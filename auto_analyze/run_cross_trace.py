@@ -10,13 +10,13 @@ Automatically infers analysis mode from the traces:
   - regression:       Traces from the same framework, different commits
 
 Usage:
-    python -m auto_analyze.run_cross_trace --config <config.json> [--clean]
+    python -m auto_analyze.run_cross_trace --config <config.json> [--no-clean]
     python -m auto_analyze.run_cross_trace --config <config.json> --claude-config <claude.json>
 
 Arguments:
     --config          Path to cross-trace config JSON (required)
     --claude-config   Path to Claude config JSON (default: auto_analyze/configs/claude_config.json)
-    --clean           Clean output directory before running
+    --no-clean        Do not clean output directory before running
 
 Config JSON fields:
     traces            List of objects, each with "result_dir" pointing to a single-trace output
@@ -129,9 +129,9 @@ if __name__ == "__main__":
         help="Path to Claude config JSON file (default: auto_analyze/configs/claude_config.json)",
     )
     parser.add_argument(
-        "--clean",
+        "--no-clean",
         action="store_true",
-        help="Clean output directory before running",
+        help="Do not clean output directory before running (default: clean)",
     )
     args = parser.parse_args()
 
@@ -147,7 +147,7 @@ if __name__ == "__main__":
             print(f"  - {e}")
         sys.exit(1)
 
-    if args.clean and os.path.exists(config.output_dir):
+    if not args.no_clean and os.path.exists(config.output_dir):
         safe_clean_dir(config.output_dir)
     os.makedirs(config.output_dir, exist_ok=True)
 
