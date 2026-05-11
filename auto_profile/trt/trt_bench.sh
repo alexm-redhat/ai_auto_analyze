@@ -7,6 +7,7 @@ load_run_config "$RUN_CONFIG"
 
 clean_dir_contents ${TRT_DOCKER_RESULTS_DIR}
 write_run_metadata ${TRT_DOCKER_RESULTS_DIR} ${TRT_DOCKER_IMAGE}
+write_framework_commit ${TRT_DOCKER_RESULTS_DIR} ${TRT}
 
 log_info "Run profiles:"
 

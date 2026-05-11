@@ -14,5 +14,6 @@
     "high_level_focus": "The traces provided are only for pure decode operations (no prefill). Focus on decode performance for low batch sizes, specifically transformer block GPU kernel performance",
     "perf_analysis_focus": null,
     "output_dir": "/path/to/single_trace_output/vllm",
-    "max_gpu_ops": 1000
+    "max_gpu_ops": 1000,
+    "skip_perf_analysis": false
 }

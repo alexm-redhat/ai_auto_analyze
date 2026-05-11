@@ -10,18 +10,14 @@ HIGH_LEVEL_OPS_FILE = "transformer_block_high_level_ops.txt"
 GPU_OPS_TXT_FILE = "gpu_ops.txt"
 GPU_OPS_TO_BLOCKS_FILE = "gpu_ops_to_blocks.txt"
 MEDIAN_BLOCK_FILE = "median_block.txt"
-TRANSFORMER_BLOCK_TRACE_JSON_FILE = "transformer_block_trace.json"
-TRANSFORMER_BLOCK_TRACE_TXT_FILE = "transformer_block_trace.txt"
-PERF_ANALYSIS_FILE = "perf_analysis.txt"
+PERF_ANALYSIS_SINGLE_FILE = "perf_analysis_single_trace.txt"
 
 SINGLE_TRACE_OUTPUT_FILES = {
     "high_level_ops": HIGH_LEVEL_OPS_FILE,
     "gpu_ops_txt": GPU_OPS_TXT_FILE,
     "gpu_ops_to_blocks": GPU_OPS_TO_BLOCKS_FILE,
     "median_block": MEDIAN_BLOCK_FILE,
-    "transformer_block_trace_json": TRANSFORMER_BLOCK_TRACE_JSON_FILE,
-    "transformer_block_trace_txt": TRANSFORMER_BLOCK_TRACE_TXT_FILE,
-    "perf_analysis": PERF_ANALYSIS_FILE,
+    "perf_analysis": PERF_ANALYSIS_SINGLE_FILE,
 }
 
 MAX_GPU_OPS = 2000
@@ -54,6 +50,7 @@ class SingleTraceParams:
     run_log: str = ""
     high_level_focus: str = ""
     perf_analysis_focus: str | None = None
+    skip_perf_analysis: bool = False
     max_gpu_ops: int = MAX_GPU_OPS
 
     @property

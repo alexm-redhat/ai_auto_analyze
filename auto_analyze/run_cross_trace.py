@@ -3,33 +3,43 @@ Cross-Trace Analysis Entry Point
 =================================
 
 Compares multiple single-trace analysis results to find performance
-differences and generate improvement plans.
+differences and generate an improvement plan for the target trace.
 
-Supports two analysis modes:
-  - cross-framework:  Compare different frameworks (e.g., vLLM vs SGLang)
-  - regression:       Compare different versions/commits of the same framework
+Automatically infers analysis mode from the traces:
+  - cross-framework:  Traces from different frameworks (e.g., vLLM vs SGLang)
+  - regression:       Traces from the same framework, different commits
 
 Usage:
-    python -m auto_analyze.run_cross_trace --config cross_trace_config.json
+    python -m auto_analyze.run_cross_trace --config <config.json> [--clean]
+    python -m auto_analyze.run_cross_trace --config <config.json> --claude-config <claude.json>
 
-Inputs (via config JSON):
-    - trace_results:     List of single-trace result references, each with:
-        - trace_id:              Unique identifier for this trace
-        - framework_name:        Framework name
-        - framework_source_code: Path to framework source code
-        - result_dir:            Path to single-trace analysis result directory
-    - analysis_type:     "cross-framework" or "regression"
-    - target_trace_id:   Which trace to analyze/optimize
-    - model:             Model name
-    - gpu_type:          GPU type
-    - output_dir:        Output directory for results
+Arguments:
+    --config          Path to cross-trace config JSON (required)
+    --claude-config   Path to Claude config JSON (default: auto_analyze/configs/claude_config.json)
+    --clean           Clean output directory before running
+
+Config JSON fields:
+    traces            List of objects, each with "result_dir" pointing to a single-trace output
+    target_trace_id   Index into traces list (the trace to optimize/fix)
+    output_dir        Output directory for cross-trace results
+
+    All other parameters (framework name, model, GPU, commit ID, execution params)
+    are inferred from each trace's run_params.txt file. The traces must share the
+    same model, GPU type, batch size, prefill size, and output size.
 
 Outputs (in output_dir):
-    1. perf_compare_blocks.txt  - Per-operation comparison of median blocks
-    2. perf_diff_analysis.txt   - Full explanation of target's perf differences
-    3. improvement_plan.txt     - Improvement/fix proposals for target trace
+    - perf_matching_blocks.txt       Operation-by-operation matching across traces
+    - perf_analysis_cross_trace.txt  Performance diff analysis with improvement plan
+    - run_params_cross.txt           Cross-trace run parameters for downstream tools
 """
 
+import sys as _sys
+import os as _os
+_project_root = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), ".."))
+if _project_root not in _sys.path:
+    _sys.path.insert(0, _project_root)
+
+import json
 import os
 import sys
 import time
@@ -39,49 +49,49 @@ import argparse
 from common.utils import setup_logging, safe_clean_dir
 from common.claude_utils import claude_run, ClaudeConfig
 
-from auto_analyze.cross_trace_config import (
-    CrossTraceConfig,
-    ANALYSIS_TYPE_CROSS_FRAMEWORK,
-)
-from auto_analyze.cross_trace_prompts import gen_cross_trace_prompts
+from auto_analyze.configs.cross_trace_config import CrossTraceConfig
+from auto_analyze.prompts.cross_trace_prompts import gen_cross_trace_prompts
 
 
-def build_cross_trace_claude_config(output_dir):
+def load_claude_config(claude_config_path, output_dir):
+    with open(claude_config_path) as f:
+        data = json.load(f)
     return ClaudeConfig(
-        model="claude-opus-4-6[1m]",
-        allowed_tools=["Read", "Write", "Bash"],
+        model=data["model"],
+        allowed_tools=data["allowed_tools"],
         perm_mode="acceptEdits",
         cwd=output_dir,
     )
 
 
 def log_config(config: CrossTraceConfig):
+    analysis_type = config.infer_analysis_type()
     mode_label = (
         "Cross-Framework Comparison"
-        if config.analysis_type == ANALYSIS_TYPE_CROSS_FRAMEWORK
+        if analysis_type == "cross-framework"
         else "Same-Framework Regression Analysis"
     )
+
+    target = config.get_target_result()
 
     print("=" * 70)
     print("  CROSS-TRACE ANALYSIS")
     print("=" * 70)
     print(f"  Mode:          {mode_label}")
-    print(f"  Model:         {config.model}")
-    print(f"  GPU:           {config.gpu_type}")
-    print(f"  Target trace:  {config.target_trace_id}")
+    print(f"  Model:         {target.model}")
+    print(f"  GPU:           {target.gpu_type}")
+    print(f"  Target:        [{config.target_trace_id}] {target.trace_id}")
     print(f"  Output dir:    {config.output_dir}")
     print()
     print("  Traces:")
-    for i, tr in enumerate(config.trace_results):
-        marker = " (*)" if tr.trace_id == config.target_trace_id else ""
-        print(f"    [{i+1}] {tr.trace_id}{marker}")
+    for i, tr in enumerate(config.traces):
+        marker = " (*)" if i == config.target_trace_id else ""
+        print(f"    [{i}] {tr.trace_id}{marker}")
         print(f"        Framework:   {tr.framework_name}")
+        print(f"        Commit:      {tr.commit_id[:12] if tr.commit_id else 'N/A'}")
         print(f"        Source code: {tr.framework_source_code}")
-        if tr.result_dir:
-            print(f"        Result dir:  {tr.result_dir}")
-        else:
-            print(f"        Median:      {tr.median_block_file}")
-            print(f"        High-level:  {tr.high_level_ops_file}")
+        print(f"        Result dir:  {tr.result_dir}")
+        print(f"        Exec params: BS={tr.batch_size_range} ISL={tr.prefill_size_range} OSL={tr.output_size_range}")
     print("=" * 70)
 
 
@@ -91,7 +101,7 @@ def log_outputs(output_dir, output_files):
     print("  OUTPUT FILES")
     print("=" * 70)
     for label, filename in output_files.items():
-        path = os.path.join(output_dir, filename)
+        path = filename if os.path.isabs(filename) else os.path.join(output_dir, filename)
         exists = os.path.exists(path)
         status = "OK" if exists else "MISSING"
         print(f"  [{status}] {label}: {filename}")
@@ -113,6 +123,12 @@ if __name__ == "__main__":
         help="Path to cross-trace config JSON file",
     )
     parser.add_argument(
+        "--claude-config",
+        type=str,
+        default="auto_analyze/configs/claude_config.json",
+        help="Path to Claude config JSON file (default: auto_analyze/configs/claude_config.json)",
+    )
+    parser.add_argument(
         "--clean",
         action="store_true",
         help="Clean output directory before running",
@@ -120,6 +136,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     config = CrossTraceConfig.from_json(args.config)
+
+    # Load parameters from each trace's result directory
+    config.load_all_trace_params()
 
     errors = config.validate()
     if errors:
@@ -134,7 +153,10 @@ if __name__ == "__main__":
 
     log_config(config)
 
-    claude_config = build_cross_trace_claude_config(config.output_dir)
+    print("\nSaving cross-trace run parameters...")
+    config.save_run_params()
+
+    claude_config = load_claude_config(args.claude_config, config.output_dir)
     prompts, output_files = gen_cross_trace_prompts(config)
 
     start_time = time.time()
@@ -144,6 +166,9 @@ if __name__ == "__main__":
     asyncio.run(claude_run(claude_config, prompts))
 
     duration = time.time() - start_time
-    print(f"\nAnalysis completed in {duration:.1f}s")
+    mins, secs = divmod(int(duration), 60)
+    hrs, mins = divmod(mins, 60)
+    human_time = f"{hrs}h {mins}m {secs}s" if hrs else f"{mins}m {secs}s"
+    print(f"\nAnalysis completed in {duration:.1f}s ({human_time})")
 
     log_outputs(config.output_dir, output_files)

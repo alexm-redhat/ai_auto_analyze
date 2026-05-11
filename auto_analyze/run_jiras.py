@@ -1,16 +1,17 @@
 """
-Summary PDF Report Generator
-==============================
+JIRA Task Creator
+==================
 
-Generates a professional PDF report from analysis results.
+Creates JIRA tasks from analysis improvement proposals. Each improvement
+proposal becomes a sub-task under a master JIRA task.
 
 Supports two input modes:
-  (A) Single-trace: report from one framework's perf analysis
-  (B) Cross-trace:  report from cross-framework/regression comparison
+  (A) Single-trace: create tasks from perf_analysis_single_trace.txt proposals
+  (B) Cross-trace:  create tasks from perf_analysis_cross_trace.txt improvement plan
 
 Usage:
-    python -m auto_analyze.run_summary_pdf --single-config <config.json>
-    python -m auto_analyze.run_summary_pdf --cross-config <config.json>
+    python -m auto_analyze.run_jiras --single-config <config.json>
+    python -m auto_analyze.run_jiras --cross-config <config.json>
 
 Arguments:
     --single-config   Path to single-trace config JSON (mode A)
@@ -18,11 +19,10 @@ Arguments:
     --claude-config   Path to Claude config JSON (default: auto_analyze/configs/claude_config.json)
 
     Exactly one of --single-config or --cross-config is required.
+    Requires JIRA MCP server to be configured.
 
 Output:
-    summary_report.pdf in the analysis results directory.
-    - Mode A reads: run_params.txt, perf_analysis_single_trace.txt, median_block.txt, etc.
-    - Mode B reads: run_params_cross.txt, perf_analysis_cross_trace.txt, perf_matching_blocks.txt
+    jira_tasks_output.txt in the analysis results directory.
 """
 
 import sys as _sys
@@ -41,25 +41,29 @@ import argparse
 from common.utils import setup_logging
 from common.claude_utils import claude_run, ClaudeConfig
 
-from auto_analyze.prompts.summary_pdf_prompts import SummaryPDFPrompt, SUMMARY_PDF_FILE
+from auto_analyze.prompts.jira_prompts import JiraTasksPrompt, JIRA_TASKS_FILE
+from auto_analyze.configs.single_trace_config import PERF_ANALYSIS_SINGLE_FILE
+from auto_analyze.configs.cross_trace_config import PERF_ANALYSIS_CROSS_FILE
 
 
 def load_claude_config(claude_config_path, cwd):
     with open(claude_config_path) as f:
         data = json.load(f)
-    return ClaudeConfig(
+    config = ClaudeConfig(
         model=data["model"],
         allowed_tools=data["allowed_tools"],
         perm_mode="acceptEdits",
         cwd=cwd,
     )
+    config.allowed_tools.append("mcp__mcp-atlassian__*")
+    return config
 
 
 if __name__ == "__main__":
-    setup_logging("summary_pdf")
+    setup_logging("create_jiras")
 
     parser = argparse.ArgumentParser(
-        description="Generate summary PDF report from analysis results",
+        description="Create JIRA tasks from analysis improvement proposals",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -87,43 +91,54 @@ if __name__ == "__main__":
         config = SingleTraceConfig.from_json(args.single_config)
         results_dir = os.path.abspath(config.output_dir)
         mode = "single"
+        run_params_file = os.path.join(results_dir, "run_params.txt")
+        analysis_file = os.path.join(results_dir, PERF_ANALYSIS_SINGLE_FILE)
     else:
         from auto_analyze.configs.cross_trace_config import CrossTraceConfig
         config = CrossTraceConfig.from_json(args.cross_config)
         config.load_all_trace_params()
         results_dir = os.path.abspath(config.output_dir)
         mode = "cross"
+        run_params_file = os.path.join(results_dir, "run_params_cross.txt")
+        analysis_file = os.path.join(results_dir, PERF_ANALYSIS_CROSS_FILE)
 
     if not os.path.isdir(results_dir):
         print(f"Error: results directory not found: {results_dir}")
         sys.exit(1)
 
-    output_file = os.path.join(results_dir, SUMMARY_PDF_FILE)
+    if not os.path.exists(analysis_file):
+        print(f"Error: analysis file not found: {analysis_file}")
+        sys.exit(1)
+
+    output_file = os.path.join(results_dir, JIRA_TASKS_FILE)
 
     print("=" * 70)
-    print("  SUMMARY PDF GENERATION")
+    print("  JIRA TASK CREATION")
     print("=" * 70)
-    print(f"  Mode:          {mode}")
-    print(f"  Results dir:   {results_dir}")
-    print(f"  Output file:   {output_file}")
+    print(f"  Mode:           {mode}")
+    print(f"  Results dir:    {results_dir}")
+    print(f"  Analysis file:  {analysis_file}")
+    print(f"  Output file:    {output_file}")
     print("=" * 70)
 
-    prompt_obj = SummaryPDFPrompt(
+    prompt_obj = JiraTasksPrompt(
         results_dir=results_dir,
         mode=mode,
+        run_params_file=run_params_file,
+        analysis_file=analysis_file,
         output_file=output_file,
     )
 
     claude_config = load_claude_config(args.claude_config, results_dir)
 
     start_time = time.time()
-    print(f"\nStarting PDF generation at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"\nStarting JIRA task creation at {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
     asyncio.run(claude_run(claude_config, [prompt_obj.prompt()]))
 
     duration = time.time() - start_time
     mins, secs = divmod(int(duration), 60)
-    print(f"\nPDF generation completed in {duration:.1f}s ({mins}m {secs}s)")
+    print(f"\nJIRA task creation completed in {duration:.1f}s ({mins}m {secs}s)")
 
     if os.path.exists(output_file):
         print(f"  [OK] {output_file}")

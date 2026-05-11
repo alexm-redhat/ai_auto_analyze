@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import ClassVar
 
-from auto_analyze.single_trace_config import (
+from auto_analyze.configs.single_trace_config import (
     SingleTraceParams,
     SingleTraceConfig,
     TRACE_FILE_TYPE_NSYS,
@@ -10,10 +10,9 @@ from auto_analyze.single_trace_config import (
     GPU_OPS_TXT_FILE,
     GPU_OPS_TO_BLOCKS_FILE,
     MEDIAN_BLOCK_FILE,
-    TRANSFORMER_BLOCK_TRACE_JSON_FILE,
-    TRANSFORMER_BLOCK_TRACE_TXT_FILE,
-    PERF_ANALYSIS_FILE,
+    PERF_ANALYSIS_SINGLE_FILE,
 )
+from auto_analyze.prompts.chrome_trace_prompts import build_single_trace_json_prompt
 
 
 TRACE_DESCRIPTIONS = {
@@ -501,102 +500,6 @@ Write the output to [output_file].
         )
 
 
-@dataclass
-class TransformerBlockTracePrompt:
-    params: SingleTraceParams
-    median_block_file: str
-    high_level_ops_file: str
-    gpu_ops_txt_file: str
-    perf_analysis_file: str
-    output_json_file: str
-    output_txt_file: str
-    prompt_template: ClassVar[str] = """
-{context}
-[median_block_file] = {median_block_file}
-[high_level_ops_file] = {high_level_ops_file}
-[gpu_ops_txt_file] = {gpu_ops_txt_file}
-[perf_analysis_file] = {perf_analysis_file}
-[output_json_file] = {output_json_file}
-[output_txt_file] = {output_txt_file}
-- [median_block_file] is the median transformer block with correlated operations.
-- [high_level_ops_file] describes the block operations with source code references.
-- [gpu_ops_txt_file] is the full GPU operations table — use it for exact kernel timestamps and launch parameters.
-- [perf_analysis_file] has source code analysis, utilization, and improvement proposals.
-- <framework_source_code> is the source code of <framework_name>.
-
-Generate a Chrome trace JSON and human-readable summary of the median transformer block. In Perfetto, a user should:
-- See execution context in the info bar
-- See ALL operations on their CUDA streams — NO operation may be dropped or hidden
-- Click any operation for source code and improvement details
-
-Write and execute a single self-contained Python script:
-
-1. Read all input files. Match median block ops to [gpu_ops_txt_file] by start_ns/end_ns.
-
-{gpu_focus_instruction}
-
-2. Build Chrome trace JSON:
-
-INFO BAR (pid=0, tid=0): full block duration, name = "<model> | <framework_name> | <gpu_type> | BS=<batch_size_range> ISL=<prefill_size_range> OSL=<output_size_range>", args with execution_config, median_block info, total_proposals count.
-
-CUDA STREAM LANES:
-- Each CUDA stream gets one pid (starting from pid=2; pid=0 is reserved for the info bar).
-- HANDLING OVERLAPS (PDL): Operations on the same CUDA stream can overlap in time (common with Programmatic Dependent Launch). Use multiple tids within the same pid to separate overlapping operations into lanes:
-    - tid=0 is the main lane. tid=1 is the first overflow lane, tid=2 the second, etc.
-    - Use a greedy lane assignment: for each operation sorted by start time, find the first tid for this stream where the operation does not overlap with any existing event on that tid. If no tid works, allocate a new one.
-    - Use the MINIMUM number of tids needed to avoid all within-tid overlaps.
-    - Overlap check: event_A.ts + event_A.dur > event_B.ts means they overlap.
-- LANE NAMING:
-    - Use process_name metadata for the pid: "Stream 23".
-    - Use thread_name metadata for each tid: tid=0 -> "Stream 23", tid=1 -> "Stream 23 (PDL lane 2)", etc.
-    - Use process_sort_index metadata to order streams logically in Perfetto.
-- Every single operation from the median block MUST appear in the trace. Verify at the end that the number of kernel events in the JSON equals the number of operations in [median_block_file].
-
-OPERATION NAMING: Prepend a brief high-level prefix per kernel (e.g., "Attn: ...", "MoE: ...", "Comm: ..."). Keep prefix short.
-
-OPERATION ARGS: For each kernel event, add "args" with:
-- "high_level_op": correlated operation name
-- "source_code": file:line references with call chain explanation
-- "proposed_improvements": relevant proposals from [perf_analysis_file], or "No improvements proposed for this operation."
-
-TIMING: Block starts at time 0.
-
-3. Write outputs:
-[output_json_file]: Chrome trace JSON, displayTimeUnit: "ns", all ts/dur in nanoseconds.
-[output_txt_file]: header, properly aligned pipe-separated op table with all operations (ensure all "|" column separators are aligned across every row), per-stream summary.
-
-4. VALIDATE the output (in the script, before finishing):
-- Load the generated JSON back and count kernel events (ph="X", excluding info bar).
-- Compare against the number of operations in [median_block_file]. They must be equal.
-- For every (pid, tid) pair, collect all events (ph="X"), sort by ts, and verify ZERO overlaps: event_A.ts + event_A.dur <= event_B.ts for all consecutive pairs.
-- If any validation fails, print the error, fix the lane assignment, and re-generate.
-
-{script_error_handling}
-
-VERIFICATION CHECKLIST:
-- [ ] Script executes, both files generated, JSON valid
-- [ ] Info bar present
-- [ ] ALL operations from [median_block_file] are present in the trace (count matches)
-- [ ] One pid per CUDA stream (starting from pid=2), multiple tids for PDL overflow lanes
-- [ ] ZERO overlaps within any (pid, tid) pair — validated programmatically in the script
-- [ ] Every kernel has high_level_op, source_code, proposed_improvements in args
-- [ ] Block starts at t=0, all ts/dur in nanoseconds
-"""
-
-    def prompt(self):
-        return self.prompt_template.format(
-            context=self.params.context_header(),
-            gpu_focus_instruction=self.params.gpu_focus_instruction(),
-            median_block_file=self.median_block_file,
-            high_level_ops_file=self.high_level_ops_file,
-            gpu_ops_txt_file=self.gpu_ops_txt_file,
-            perf_analysis_file=self.perf_analysis_file,
-            output_json_file=self.output_json_file,
-            output_txt_file=self.output_txt_file,
-            script_error_handling=SCRIPT_ERROR_HANDLING,
-        )
-
-
 def gen_single_trace_prompts(config: SingleTraceConfig, file_prefix=""):
     import os
     output_dir = os.path.abspath(config.output_dir)
@@ -608,9 +511,7 @@ def gen_single_trace_prompts(config: SingleTraceConfig, file_prefix=""):
     gpu_ops_txt_file = _path(GPU_OPS_TXT_FILE)
     gpu_ops_to_blocks_file = _path(GPU_OPS_TO_BLOCKS_FILE)
     median_block_file = _path(MEDIAN_BLOCK_FILE)
-    perf_analysis_file = _path(PERF_ANALYSIS_FILE)
-    trace_json_file = _path(TRANSFORMER_BLOCK_TRACE_JSON_FILE)
-    trace_txt_file = _path(TRANSFORMER_BLOCK_TRACE_TXT_FILE)
+    perf_analysis_file = _path(PERF_ANALYSIS_SINGLE_FILE)
 
     params: SingleTraceParams = config
 
@@ -630,32 +531,42 @@ def gen_single_trace_prompts(config: SingleTraceConfig, file_prefix=""):
             output_file=gpu_ops_to_blocks_file,
             median_block_file=median_block_file,
         ),
-        PerfAnalysisPrompt(
-            params=params,
-            median_block_file=median_block_file,
-            high_level_ops_file=high_level_ops_file,
-            gpu_ops_to_blocks_file=gpu_ops_to_blocks_file,
-            gpu_ops_txt_file=gpu_ops_txt_file,
-            output_file=perf_analysis_file,
-        ),
-        TransformerBlockTracePrompt(
-            params=params,
-            median_block_file=median_block_file,
-            high_level_ops_file=high_level_ops_file,
-            gpu_ops_txt_file=gpu_ops_txt_file,
-            perf_analysis_file=perf_analysis_file,
-            output_json_file=trace_json_file,
-            output_txt_file=trace_txt_file,
-        ),
     ]
 
     step_names = [
         "Extracting high-level transformer block operations from source code",
         "Extracting GPU operations from trace",
         "Correlating GPU operations to transformer blocks and selecting median",
-        "Generating performance analysis",
-        "Generating transformer block trace",
     ]
+
+    output_files = {
+        "high_level_ops": high_level_ops_file,
+        "gpu_ops_txt": gpu_ops_txt_file,
+        "gpu_ops_to_blocks": gpu_ops_to_blocks_file,
+        "median_block": median_block_file,
+    }
+
+    if not config.skip_perf_analysis:
+        prompt_objects.append(
+            PerfAnalysisPrompt(
+                params=params,
+                median_block_file=median_block_file,
+                high_level_ops_file=high_level_ops_file,
+                gpu_ops_to_blocks_file=gpu_ops_to_blocks_file,
+                gpu_ops_txt_file=gpu_ops_txt_file,
+                output_file=perf_analysis_file,
+            )
+        )
+        step_names.append("Generating performance analysis")
+        output_files["perf_analysis"] = perf_analysis_file
+
+    trace_prompt = build_single_trace_json_prompt(config)
+    prompt_objects.append(trace_prompt)
+    step_names.append("Generating transformer block trace")
+    output_files.update({
+        "transformer_block_trace_json": trace_prompt.output_json_file,
+        "transformer_block_trace_txt": trace_prompt.output_txt_file,
+    })
 
     total_steps = len(step_names)
     prompts = []
@@ -671,15 +582,5 @@ def gen_single_trace_prompts(config: SingleTraceConfig, file_prefix=""):
             }
         )
         prompts.append(prompt_obj.prompt())
-
-    output_files = {
-        "high_level_ops": high_level_ops_file,
-        "gpu_ops_txt": gpu_ops_txt_file,
-        "gpu_ops_to_blocks": gpu_ops_to_blocks_file,
-        "median_block": median_block_file,
-        "transformer_block_trace_json": trace_json_file,
-        "transformer_block_trace_txt": trace_txt_file,
-        "perf_analysis": perf_analysis_file,
-    }
 
     return prompts, output_files

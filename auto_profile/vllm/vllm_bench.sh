@@ -7,6 +7,7 @@ load_run_config "$RUN_CONFIG"
 
 clean_dir_contents ${VLLM_DOCKER_RESULTS_DIR}
 write_run_metadata ${VLLM_DOCKER_RESULTS_DIR} ${VLLM_DOCKER_IMAGE}
+write_framework_commit ${VLLM_DOCKER_RESULTS_DIR} ${VLLM}
 
 log_info "Run profiles:"
 

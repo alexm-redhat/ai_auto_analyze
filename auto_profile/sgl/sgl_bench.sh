@@ -7,6 +7,7 @@ load_run_config "$RUN_CONFIG"
 
 clean_dir_contents ${SGL_DOCKER_RESULTS_DIR}
 write_run_metadata ${SGL_DOCKER_RESULTS_DIR} ${SGL_DOCKER_IMAGE}
+write_framework_commit ${SGL_DOCKER_RESULTS_DIR} ${SGL}
 
 log_info "Run profiles:"
 

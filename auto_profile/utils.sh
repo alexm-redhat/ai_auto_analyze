@@ -68,6 +68,100 @@ write_run_metadata() {
     } | tee "$outfile"
 }
 
+write_framework_commit() {
+    local dir="$1"
+    local framework="$2"
+
+    if [[ -z "$dir" || -z "$framework" ]]; then
+        echo "Usage: write_framework_commit <dir> <framework>" >&2
+        return 1
+    fi
+
+    local outfile="${dir}/commit_id.txt"
+    local commit_id=""
+    local version_str=""
+    local source_path=""
+
+    log_info "Detecting commit ID for framework: ${framework}"
+
+    # Map framework name to Python package name
+    local pkg_name="${framework}"
+    case "${framework}" in
+        vllm) pkg_name="vllm" ;;
+        sgl)  pkg_name="sglang" ;;
+        trt)  pkg_name="tensorrt_llm" ;;
+    esac
+
+    # Strategy 1: Try to find the git repo at the package install location
+    source_path="$(python3 -c "
+import ${pkg_name}
+import os
+pkg_dir = os.path.dirname(os.path.abspath(${pkg_name}.__file__))
+# Walk up to find .git directory
+d = pkg_dir
+for _ in range(5):
+    if os.path.exists(os.path.join(d, '.git')):
+        print(d)
+        break
+    d = os.path.dirname(d)
+" 2>/dev/null || true)"
+
+    if [[ -n "${source_path}" && -d "${source_path}/.git" ]]; then
+        commit_id="$(git -C "${source_path}" rev-parse HEAD 2>/dev/null || true)"
+        if [[ -n "${commit_id}" ]]; then
+            log_info "  Commit ID from git repo at ${source_path}: ${commit_id}"
+        fi
+    fi
+
+    # Strategy 2: Parse commit hash from version string (e.g., "0.19.2rc1.dev134+gfe9c3d6c5")
+    if [[ -z "${commit_id}" ]]; then
+        version_str="$(python3 -c "import ${pkg_name}; print(${pkg_name}.__version__)" 2>/dev/null || true)"
+        if [[ -n "${version_str}" ]]; then
+            log_info "  Version string: ${version_str}"
+            # Extract git hash after "+g" (PEP 440 local version)
+            local git_hash
+            git_hash="$(echo "${version_str}" | grep -oP '\+g\K[0-9a-f]+' || true)"
+            if [[ -n "${git_hash}" ]]; then
+                commit_id="${git_hash}"
+                log_info "  Commit ID from version string: ${commit_id}"
+            fi
+        fi
+    fi
+
+    # Strategy 3: Try pip show to find the source directory
+    if [[ -z "${commit_id}" ]]; then
+        local pip_location
+        pip_location="$(pip show "${pkg_name}" 2>/dev/null | grep '^Location:' | cut -d' ' -f2 || true)"
+        if [[ -n "${pip_location}" ]]; then
+            local editable_src
+            editable_src="$(pip show "${pkg_name}" 2>/dev/null | grep '^Editable project location:' | cut -d' ' -f4 || true)"
+            if [[ -n "${editable_src}" && -d "${editable_src}/.git" ]]; then
+                commit_id="$(git -C "${editable_src}" rev-parse HEAD 2>/dev/null || true)"
+                if [[ -n "${commit_id}" ]]; then
+                    log_info "  Commit ID from editable install at ${editable_src}: ${commit_id}"
+                fi
+            fi
+        fi
+    fi
+
+    if [[ -z "${commit_id}" ]]; then
+        commit_id="unknown"
+        log_warn "  Could not determine commit ID for ${framework}"
+    fi
+
+    echo "${commit_id}" > "${outfile}"
+    log_info "  Wrote commit ID to: ${outfile}"
+
+    # Also append to run_metadata.txt if it exists
+    local metadata_file="${dir}/run_metadata.txt"
+    if [[ -f "${metadata_file}" ]]; then
+        echo "Framework Commit:  ${commit_id}" >> "${metadata_file}"
+        if [[ -n "${version_str}" ]]; then
+            echo "Framework Version: ${version_str}" >> "${metadata_file}"
+        fi
+    fi
+}
+
 create_dir_if_missing() {
   local dir="$1"
 

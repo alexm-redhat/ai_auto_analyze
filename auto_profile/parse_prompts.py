@@ -61,10 +61,15 @@ Next, generate a python program that creates a sequence of summary comparison ta
 - Store all results in <output_dir>
 
 Now do the following:
-- For each test case <test_id_with_batch> where vLLM is slower than other framework, generate an output json file in <output_dir>/analyze_<test_id_with_batch>.json that has the test parameters formatted in the same way as the example file auto_analyze/analyze_config_example.json.
-    - Ensure the per-framework test dirs point to the proper sub-directories in <test_dir>.
-    - Ensure the claude output dir points to <test_dir>/analyze
-    - Ensure all parameters are correct
+- For each test case <test_id_with_batch> where vLLM is slower than other framework, generate the following outputs inside <test_results_dir>/<test_id_with_batch>:
+    - For each framework involved, a single trace config json file for this framework. Based on the example file single_trace_config_example.json and based on the results in <test_results_dir>/<test_id_with_batch>/[framework].
+        - Ensure the output_dir is analyze_[framework] inside the <test_results_dir>/<test_id_with_batch>
+        - Get the framework source code path from source_codes.json
+        - Get the framework commit id from metadata.txt. If does not exist, then try to extract it from the run log, and if not found, then default to HEAD.
+        - Extract the run_command from the run log txt file and use it in the json config
+        - For trace file, if it is NSYS, then prefer the *.sqlite version as the path (if exists).
+        - Ensure skip_perf_analysis is set to true (this is a cross framework comparison)
+    - A cross trace config json file that compares all of the frameworks involved where the target framework is vllm. Based on the example file cross_trace_config_example.json and the previously generated single trace json configs.
 
 """
 

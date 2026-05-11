@@ -2,44 +2,53 @@
 Single-Trace Analysis Entry Point
 ==================================
 
-Analyzes a single framework trace to extract transformer block structure,
+Analyzes a single framework's GPU trace to extract transformer block structure,
 correlate GPU operations to high-level operations, and produce performance
-analysis artifacts.
+analysis with improvement proposals.
 
 Usage:
-    python -m auto_analyze.run_single_trace \\
-        --config single_trace_config.json \\
-        --claude-config claude_config.json
+    python -m auto_analyze.run_single_trace --config <config.json> [--no-clean]
+    python -m auto_analyze.run_single_trace --config <config.json> --claude-config <claude.json>
 
-Inputs (via config JSON):
-    - framework_name:        Name of the framework (e.g., "vllm", "sglang")
-    - model:                 HuggingFace model tag (e.g., "nvidia/DeepSeek-R1-NVFP4")
-    - gpu_type:              GPU type (e.g., "B200")
-    - batch_size_range:      Batch size range (e.g., "1" or "1,4,16")
-    - prefill_size_range:    Input/prefill size range (e.g., "4")
-    - output_size_range:     Output size range (e.g., "1024")
-    - trace_file:            Path to trace file (.nsys-rep, .sqlite, .json, or .json.gz)
-    - framework_source_code: Path to framework source code
-    - trace_gpu_focus:       "ALL" or a GPU ID like "0" (default: "0")
-    - run_command:           Command used to run the framework
-    - run_log:               (optional) Path to run log file
-    - high_level_focus:      (optional) Focus guidance for high-level block analysis
-    - perf_analysis_focus:   (optional) Focus areas for performance analysis
-    - output_dir:            Output directory for results
-    - max_gpu_ops:           (optional) Max GPU ops to extract (default: 2000)
+Arguments:
+    --config          Path to single-trace config JSON (required)
+    --claude-config   Path to Claude config JSON (default: auto_analyze/configs/claude_config.json)
+    --no-clean        Do not clean output directory before running
 
-Claude config JSON:
-    - model:                 Claude model to use (e.g., "claude-opus-4-6[1m]")
-    - allowed_tools:         List of tools (e.g., ["Read", "Write", "Bash"])
+Config JSON fields:
+    Required:
+      framework_name, model, gpu_type, batch_size_range, prefill_size_range,
+      output_size_range, trace_file, framework_source_code, trace_gpu_focus,
+      run_command, output_dir
+
+    Optional:
+      commit_id           Git commit to checkout (default: "HEAD")
+      run_log             Path to framework run log file
+      high_level_focus    Focus guidance for high-level block analysis
+      perf_analysis_focus Focus areas for performance analysis
+      skip_perf_analysis  Skip perf analysis and trace generation (default: false)
+      max_gpu_ops         Max GPU ops to extract (default: 2000)
 
 Outputs (in output_dir):
-    1. transformer_block_high_level_ops.txt/.json - High-level transformer block ops
-    2. gpu_ops.txt/.json                          - GPU operations extracted from trace
-    3. gpu_ops_to_blocks.txt                      - GPU ops correlated to blocks
-    4. median_block.txt                           - Median transformer block
-    5. perf_analysis.txt                          - Performance analysis
-    6. transformer_block_trace.json/.txt           - Trace visualization + summary
+    Always produced:
+      - transformer_block_high_level_ops.txt  High-level transformer block operations
+      - gpu_ops.txt                           GPU operations extracted from trace
+      - gpu_ops_to_blocks.txt                 GPU ops correlated to transformer blocks
+      - median_block.txt                      Selected median transformer block
+      - run_params.txt                        Run parameters for downstream tools
+      - run_originals/                        Copies of trace file, run command, run log
+
+    When skip_perf_analysis is false (default):
+      - perf_analysis_single_trace.txt        Detailed performance analysis
+      - single_trace_transformer_block.json   Chrome trace JSON for Perfetto
+      - single_trace_transformer_block.txt    Human-readable trace summary
 """
+
+import sys as _sys
+import os as _os
+_project_root = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), ".."))
+if _project_root not in _sys.path:
+    _sys.path.insert(0, _project_root)
 
 import json
 import os
@@ -51,8 +60,8 @@ import argparse
 from common.utils import setup_logging, safe_clean_dir
 from common.claude_utils import claude_run, ClaudeConfig
 
-from auto_analyze.single_trace_config import SingleTraceConfig
-from auto_analyze.single_trace_prompts import gen_single_trace_prompts
+from auto_analyze.configs.single_trace_config import SingleTraceConfig
+from auto_analyze.prompts.single_trace_prompts import gen_single_trace_prompts
 
 import shutil
 from dataclasses import asdict
@@ -93,6 +102,8 @@ def log_config(config: SingleTraceConfig):
     if config.high_level_focus:
         print(f"  Focus:         {config.high_level_focus}")
     print(f"  Output dir:    {config.output_dir}")
+    print(f"  Skip perf analysis: {config.skip_perf_analysis}")
+    
     print("=" * 70)
 
 
@@ -171,9 +182,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--claude-config",
-        required=True,
         type=str,
-        help="Path to Claude config JSON file (model, allowed_tools, perm_mode)",
+        default="auto_analyze/configs/claude_config.json",
+        help="Path to Claude config JSON file (default: auto_analyze/configs/claude_config.json)",
     )
     parser.add_argument(
         "--no-clean",
