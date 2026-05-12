@@ -113,9 +113,9 @@ Do the following:
     - Understand in-detail why the other framework is faster and see how to fix this performance difference by porting the code from the other framework. I.e we want to COPY-PASTE as much as possible from the other framework while doing MINIMAL changes to the target framework. THIS IS IMPORTANT!
 
 - Generate a summary improvement plan for the target trace that fully recovers its performance as follows:
-    - Executive summary with gaps, key findings and key ideas
-    - A ranked sequence of improvement proposals (from most impactful to less), where each proposal has:
-        - A summary of root causes, key findings and key ideas
+    - Executive summary with gaps, key findings, key ideas, and ranked plan summary (that also has impact per each improvement in % of total block time).
+    - A detailed ranked sequence of improvement proposals (from most impactful to less), where each proposal has:
+        - A summary of root causes, key findings, key ideas, and estimated improvement/impact in % of total block time. 
         - A step-by-step guide that describes how to port code from the other framework with minimal changes to the target framework, in order to fix the performance difference fully (THIS IS IMPORTANT!). For each step provide:
             - An explanation of the step
             - A code snippet example that shows what needs to be changed. Ensure the code snippet is properly formatted and detailed enough.
