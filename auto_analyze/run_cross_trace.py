@@ -7,7 +7,7 @@ differences and generate an improvement plan for the target trace.
 
 Automatically infers analysis mode from the traces:
   - cross-framework:  Traces from different frameworks (e.g., vLLM vs SGLang)
-  - regression:       Traces from the same framework, different commits
+  - cross-commit:     Traces from the same framework, different commits
 
 Usage:
     python -m auto_analyze.run_cross_trace --config <config.json> [--no-clean]
@@ -19,18 +19,23 @@ Arguments:
     --no-clean        Do not clean output directory before running
 
 Config JSON fields:
-    traces            List of objects, each with "result_dir" pointing to a single-trace output
-    target_trace_id   Index into traces list (the trace to optimize/fix)
-    output_dir        Output directory for cross-trace results
+    traces                  List of objects, each with "result_dir" pointing to a single-trace output
+    target_trace_id         Index into traces list (the trace to optimize/fix)
+    output_dir              Output directory for cross-trace results
+    make_improvement_plan   If true, generate improvement plan for target trace (default: false)
 
     All other parameters (framework name, model, GPU, commit ID, execution params)
     are inferred from each trace's run_params.txt file. The traces must share the
     same model, GPU type, batch size, prefill size, and output size.
 
 Outputs (in output_dir):
-    - perf_matching_blocks.txt       Operation-by-operation matching across traces
-    - perf_analysis_cross_trace.txt  Performance diff analysis with improvement plan
-    - run_params_cross.txt           Cross-trace run parameters for downstream tools
+    Always produced:
+      - cross_matching_blocks.txt      Operation-by-operation matching across block traces
+      - cross_compare_blocks.txt       Performance comparison across block traces
+      - run_params_cross.txt           Cross-trace run parameters for downstream tools
+
+    When make_improvement_plan is true:
+      - cross_improvement_plan.txt     Improvement plan for target trace with coding guides
 """
 
 import sys as _sys
@@ -46,7 +51,7 @@ import time
 import asyncio
 import argparse
 
-from common.utils import setup_logging, safe_clean_dir
+from common.utils import setup_logging, safe_clean_dir, clean_output_dir
 from common.claude_utils import claude_run, ClaudeConfig
 
 from auto_analyze.configs.cross_trace_config import CrossTraceConfig
@@ -69,7 +74,7 @@ def log_config(config: CrossTraceConfig):
     mode_label = (
         "Cross-Framework Comparison"
         if analysis_type == "cross-framework"
-        else "Same-Framework Regression Analysis"
+        else "Same-Framework Cross-Commit Analysis"
     )
 
     target = config.get_target_result()
@@ -171,4 +176,5 @@ if __name__ == "__main__":
     human_time = f"{hrs}h {mins}m {secs}s" if hrs else f"{mins}m {secs}s"
     print(f"\nAnalysis completed in {duration:.1f}s ({human_time})")
 
+    clean_output_dir(config.output_dir, output_files)
     log_outputs(config.output_dir, output_files)

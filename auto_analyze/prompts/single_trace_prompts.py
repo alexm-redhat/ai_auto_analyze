@@ -39,14 +39,14 @@ TRACE_DESCRIPTIONS = {
 #   <framework_source_code> Path to the framework source tree
 #   <trace_file>            Path to the trace file (.sqlite or .json)
 #   <trace_file_type>       Auto-detected: "NSYS" (.sqlite) or "PYTORCH" (.json)
-#   <trace_gpu_focus>       "ALL" or a GPU ID (e.g. "0")
 #   <batch_size_range>      Batch size(s) used in the run
 #   <prefill_size_range>    Prefill / input sequence length(s)
 #   <output_size_range>     Output / decode sequence length(s)
 #   <max_gpu_ops>           Max GPU operations to extract (default 2000)
-#   <run_command>           Command line used to launch the framework
 #
 # Conditional (included when set):
+#   <run_command>           Command line used to launch the framework
+#   <trace_gpu_focus>       "ALL" or a GPU ID (e.g. "0"); omitted for single-GPU traces
 #   <run_log>               Path to the framework run log
 #   <high_level_focus>      Free-text guidance on what to focus the analysis on
 #   <output_dir>            Absolute path to the output directory for all results
@@ -80,7 +80,7 @@ This output will serve as a GUIDE for a subsequent step that correlates actual G
 First, inspect <model_hf_url> (the HuggingFace model page for <model>) to learn about this model's architecture, precision/quantization, and key config values (num_layers, num_experts, hidden_size, etc.).
 
 To guide your source code investigation, use the run command and run logs to understand which code paths are actually taken:
-- The command used to run the framework is: <run_command>
+{run_command_section}
 {run_log_section}
 
 {focus_section}
@@ -106,6 +106,12 @@ For each combination of (block type x execution mode), a separate section with b
     def prompt(self):
         p = self.params
 
+        run_command_section = ""
+        if p.run_command:
+            run_command_section = (
+                "- The command used to run the framework is: <run_command>"
+            )
+
         run_log_section = ""
         if p.run_log:
             run_log_section = (
@@ -124,6 +130,7 @@ For each combination of (block type x execution mode), a separate section with b
         return self.prompt_template.format(
             context=p.context_header(),
             output_file=self.output_file,
+            run_command_section=run_command_section,
             run_log_section=run_log_section,
             focus_section=focus_section,
         )

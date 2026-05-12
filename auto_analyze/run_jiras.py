@@ -7,7 +7,7 @@ proposal becomes a sub-task under a master JIRA task.
 
 Supports two input modes:
   (A) Single-trace: create tasks from perf_analysis_single_trace.txt proposals
-  (B) Cross-trace:  create tasks from perf_analysis_cross_trace.txt improvement plan
+  (B) Cross-trace:  create tasks from cross_compare_blocks.txt improvement plan
 
 Usage:
     python -m auto_analyze.run_jiras --single-config <config.json>
@@ -43,7 +43,7 @@ from common.claude_utils import claude_run, ClaudeConfig
 
 from auto_analyze.prompts.jira_prompts import JiraTasksPrompt, JIRA_TASKS_FILE
 from auto_analyze.configs.single_trace_config import PERF_ANALYSIS_SINGLE_FILE
-from auto_analyze.configs.cross_trace_config import PERF_ANALYSIS_CROSS_FILE
+from auto_analyze.configs.cross_trace_config import CROSS_COMPARE_FILE
 
 
 def load_claude_config(claude_config_path, cwd):
@@ -100,7 +100,7 @@ if __name__ == "__main__":
         results_dir = os.path.abspath(config.output_dir)
         mode = "cross"
         run_params_file = os.path.join(results_dir, "run_params_cross.txt")
-        analysis_file = os.path.join(results_dir, PERF_ANALYSIS_CROSS_FILE)
+        analysis_file = os.path.join(results_dir, CROSS_COMPARE_FILE)
 
     if not os.path.isdir(results_dir):
         print(f"Error: results directory not found: {results_dir}")

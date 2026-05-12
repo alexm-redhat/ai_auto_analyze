@@ -11,8 +11,8 @@ from auto_analyze.configs.single_trace_config import (
 )
 from auto_analyze.configs.cross_trace_config import (
     CrossTraceConfig,
-    PERF_MATCHING_FILE,
-    PERF_ANALYSIS_CROSS_FILE,
+    CROSS_MATCHING_FILE,
+    CROSS_COMPARE_FILE,
 )
 
 SINGLE_TRACE_JSON_FILE = "single_trace_transformer_block.json"
@@ -75,8 +75,8 @@ def _build_trace_context_cross(config: CrossTraceConfig) -> str:
     lines = [
         "MODE: Cross-trace visualization (multiple median transformer blocks side by side).",
         f"[target_framework] = {target.framework_name}",
-        f"[matching_file] = {os.path.join(output_dir, PERF_MATCHING_FILE)}",
-        f"[cross_analysis_file] = {os.path.join(output_dir, PERF_ANALYSIS_CROSS_FILE)}",
+        f"[matching_file] = {os.path.join(output_dir, CROSS_MATCHING_FILE)}",
+        f"[cross_analysis_file] = {os.path.join(output_dir, CROSS_COMPARE_FILE)}",
         "",
     ]
 
@@ -131,7 +131,7 @@ Write and execute a single self-contained Python script:
 
 2. Build Chrome trace JSON:
 
-INFO BAR (pid=0, tid=0): full block duration, name with model, framework(s), GPU, and execution parameters. Include execution_config and median_block info in args.
+INFO BAR (pid=0, tid=0): full block duration, name with model, framework(s) + short version of commit id, GPU, and execution parameters. Include execution_config and median_block info in args.
 
 {trace_layout}
 
@@ -152,7 +152,8 @@ OPERATION NAMING: Prepend a brief high-level prefix per kernel (e.g., "Attn: ...
 
 OPERATION ARGS: For each kernel event, add "args" with:
 - "high_level_op": correlated operation name
-- "source_code": file:line references with call chain explanation
+- "source_code": file:line references with explanations
+- "call_chain": The source code call-chain that invokes this kernel. Make sure to provide file/line references here as well 
 {perf_args_instruction}
 
 TIMING: All blocks start at time 0.

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from auto_analyze.configs.single_trace_config import PERF_ANALYSIS_SINGLE_FILE
-from auto_analyze.configs.cross_trace_config import PERF_ANALYSIS_CROSS_FILE
+from auto_analyze.configs.cross_trace_config import CROSS_COMPARE_FILE
 
 SUMMARY_PDF_FILE = "summary_report.pdf"
 
@@ -116,8 +116,8 @@ for this single framework execution."""
 
     CROSS_TRACE_CONTEXT: ClassVar[str] = f"""This is a CROSS-TRACE comparison report.
 [results_dir] contains the results of comparing multiple framework traces, including:
-  - perf_matching_blocks.txt: operation-by-operation matching across traces
-  - {PERF_ANALYSIS_CROSS_FILE}: detailed performance difference analysis with improvement plan
+  - cross_matching_blocks.txt: operation-by-operation matching across traces
+  - {CROSS_COMPARE_FILE}: detailed performance difference analysis
 
 The report should present the cross-framework comparison findings, performance gaps,
 and the improvement plan for the target framework."""

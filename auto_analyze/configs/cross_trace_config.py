@@ -10,12 +10,14 @@ from auto_analyze.configs.single_trace_config import (
 )
 
 
-PERF_MATCHING_FILE = "perf_matching_blocks.txt"
-PERF_ANALYSIS_CROSS_FILE = "perf_analysis_cross_trace.txt"
+CROSS_MATCHING_FILE = "cross_matching_blocks.txt"
+CROSS_COMPARE_FILE = "cross_compare_blocks.txt"
+CROSS_IMPROVEMENT_FILE = "cross_improvement_plan.txt"
 
 CROSS_TRACE_OUTPUT_FILES = {
-    "perf_matching": PERF_MATCHING_FILE,
-    "perf_diff_analysis": PERF_ANALYSIS_CROSS_FILE,
+    "cross_matching": CROSS_MATCHING_FILE,
+    "cross_compare": CROSS_COMPARE_FILE,
+    "cross_improvement": CROSS_IMPROVEMENT_FILE,
 }
 
 
@@ -92,6 +94,7 @@ class CrossTraceConfig:
     traces: list[TraceResult]
     target_trace_id: int
     output_dir: str = "./cross_trace_output"
+    make_improvement_plan: bool = False
 
     @classmethod
     def from_json(cls, path):
@@ -107,6 +110,7 @@ class CrossTraceConfig:
             traces=traces,
             target_trace_id=data.get("target_trace_id", 0),
             output_dir=data.get("output_dir", "./cross_trace_output"),
+            make_improvement_plan=data.get("make_improvement_plan", False),
         )
 
     def to_json(self, path):
@@ -114,6 +118,7 @@ class CrossTraceConfig:
             "traces": [{"result_dir": t.result_dir} for t in self.traces],
             "target_trace_id": self.target_trace_id,
             "output_dir": self.output_dir,
+            "make_improvement_plan": self.make_improvement_plan,
         }
         with open(path, "w") as f:
             json.dump(d, f, indent=4)
@@ -124,7 +129,7 @@ class CrossTraceConfig:
     def infer_analysis_type(self) -> str:
         frameworks = set(t.framework_name for t in self.traces)
         if len(frameworks) == 1:
-            return "regression"
+            return "cross-commit"
         return "cross-framework"
 
     def load_all_trace_params(self):

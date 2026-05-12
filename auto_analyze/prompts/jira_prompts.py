@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from auto_analyze.configs.single_trace_config import PERF_ANALYSIS_SINGLE_FILE
-from auto_analyze.configs.cross_trace_config import PERF_ANALYSIS_CROSS_FILE
+from auto_analyze.configs.cross_trace_config import CROSS_COMPARE_FILE
 
 JIRA_TASKS_FILE = "jira_tasks_output.txt"
 
@@ -14,7 +14,7 @@ class JiraTasksPrompt:
 
     Supports two modes:
       (A) Single-trace: creates tasks from {PERF_ANALYSIS_SINGLE_FILE} improvement proposals
-      (B) Cross-trace: creates tasks from {PERF_ANALYSIS_CROSS_FILE} improvement plan
+      (B) Cross-trace: creates tasks from {CROSS_COMPARE_FILE} improvement plan
     """
 
     results_dir: str
@@ -72,7 +72,7 @@ It contains improvement proposals (P1, P2, ...) for the analyzed framework.
 Create one JIRA sub-task per improvement proposal."""
 
     CROSS_CONTEXT: ClassVar[str] = f"""This is a CROSS-TRACE comparison.
-[analysis_file] is the {PERF_ANALYSIS_CROSS_FILE} from a cross-framework or regression analysis.
+[analysis_file] is the {CROSS_COMPARE_FILE} from a cross-framework or cross-commit analysis.
 It contains an improvement plan for the target framework based on comparison with other traces.
 Create one JIRA sub-task per improvement plan item."""
 

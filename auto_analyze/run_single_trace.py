@@ -18,13 +18,17 @@ Arguments:
 Config JSON fields:
     Required:
       framework_name, model, gpu_type, batch_size_range, prefill_size_range,
-      output_size_range, trace_file, framework_source_code, trace_gpu_focus,
-      run_command, output_dir
+      output_size_range, trace_file, framework_source_code, output_dir
 
     Optional:
       commit_id           Git commit to checkout (default: "HEAD")
+      run_command         Command used to run the framework (default: null).
+                          When null, auto-extracted from the first line of run_log
+                          that looks like a command. Prints a warning if not found.
       run_log             Path to framework run log file
-      high_level_focus    Focus guidance for high-level block analysis
+      trace_gpu_focus     GPU to focus on: "ALL", GPU ID, or null (default: null).
+                          Use null for PyTorch traces that are single-GPU.
+      high_level_focus    Focus guidance for high-level block analysis (default: null)
       perf_analysis_focus Focus areas for performance analysis
       skip_perf_analysis  Skip perf analysis and trace generation (default: false)
       max_gpu_ops         Max GPU ops to extract (default: 2000)
@@ -57,7 +61,7 @@ import time
 import asyncio
 import argparse
 
-from common.utils import setup_logging, safe_clean_dir
+from common.utils import setup_logging, safe_clean_dir, clean_output_dir
 from common.claude_utils import claude_run, ClaudeConfig
 
 from auto_analyze.configs.single_trace_config import SingleTraceConfig
@@ -91,14 +95,13 @@ def log_config(config: SingleTraceConfig):
     print(f"  Output size:   {config.output_size_range}")
     print(f"  Trace file:    {config.trace_file}")
     print(f"  Trace type:    {config.trace_file_type}")
-    print(f"  GPU focus:     {config.trace_gpu_focus}")
+    print(f"  GPU focus:     {config.trace_gpu_focus or '(none - single GPU trace)'}")
     print(f"  Source code:   {config.framework_source_code}")
     if config.commit_id:
         print(f"  Commit ID:     {config.commit_id}")
     if config.run_log:
         print(f"  Run log:       {config.run_log}")
-    if config.run_command:
-        print(f"  Run command:   {config.run_command}")
+    print(f"  Run command:   {config.run_command or '(not provided)'}")
     if config.high_level_focus:
         print(f"  Focus:         {config.high_level_focus}")
     print(f"  Output dir:    {config.output_dir}")
@@ -130,11 +133,12 @@ def save_run_artifacts(config: SingleTraceConfig):
     originals_dir = os.path.join(output_dir, "run_originals")
     os.makedirs(originals_dir, exist_ok=True)
 
-    # Copy trace file
-    if config.trace_file and os.path.exists(config.trace_file):
-        dst = os.path.join(originals_dir, os.path.basename(config.trace_file))
-        if os.path.abspath(config.trace_file) != os.path.abspath(dst):
-            shutil.copy2(config.trace_file, dst)
+    # Copy trace file (prefer the original gzipped version to save space)
+    trace_to_copy = getattr(config, "original_trace_file", config.trace_file)
+    if trace_to_copy and os.path.exists(trace_to_copy):
+        dst = os.path.join(originals_dir, os.path.basename(trace_to_copy))
+        if os.path.abspath(trace_to_copy) != os.path.abspath(dst):
+            shutil.copy2(trace_to_copy, dst)
             print(f"  Copied trace file: {dst}")
         else:
             print(f"  Trace file already in output dir, skipping copy")
@@ -195,6 +199,9 @@ if __name__ == "__main__":
 
     config = SingleTraceConfig.from_json(args.config)
 
+    if config.run_command is None:
+        config.try_extract_run_command()
+
     errors = config.validate()
     if errors:
         print("Configuration errors:")
@@ -228,7 +235,9 @@ if __name__ == "__main__":
     duration = time.time() - start_time
     print(f"\nAnalysis completed in {duration:.1f}s")
 
+    config.cleanup_decompressed_trace()
     config.save_result_metadata()
+    clean_output_dir(config.output_dir, output_files)
 
     log_outputs(config.output_dir, output_files)
     print(f"\nResult metadata saved to: {config.output_dir}/result_metadata.json")

@@ -90,6 +90,61 @@ def safe_clean_dir(dir_path: str | Path) -> None:
             child.unlink()
 
 
+def clean_output_dir(output_dir: str | Path, keep_files: dict[str, str],
+                     extra_keep: list[str] | None = None) -> None:
+    """Remove intermediate files from output_dir, keeping only known outputs.
+
+    Walks output_dir and deletes any file not in the keep set. The
+    run_originals/ subdirectory and run_params*.txt are always preserved.
+
+    Parameters
+    ----------
+    output_dir:
+        The analysis output directory.
+    keep_files:
+        The output_files dict returned by gen_*_prompts(). Values are
+        absolute paths or filenames relative to output_dir.
+    extra_keep:
+        Additional filenames (basenames) to preserve, e.g. result_metadata.json.
+    """
+    output_dir = Path(output_dir).resolve()
+    if not output_dir.is_dir():
+        return
+
+    keep_abs = set()
+    for path in keep_files.values():
+        p = Path(path)
+        keep_abs.add(str(p if p.is_absolute() else output_dir / p))
+
+    always_keep_basenames = {"run_params.txt", "run_params_cross.txt",
+                             "result_metadata.json"}
+    if extra_keep:
+        always_keep_basenames.update(extra_keep)
+
+    removed = []
+    for root, dirs, files in os.walk(output_dir, topdown=False):
+        root_path = Path(root)
+
+        if "run_originals" in root_path.parts:
+            continue
+
+        for fname in files:
+            fpath = root_path / fname
+            if str(fpath) in keep_abs:
+                continue
+            if fname in always_keep_basenames:
+                continue
+            fpath.unlink()
+            removed.append(str(fpath))
+
+        if root_path != output_dir and not any(root_path.iterdir()):
+            root_path.rmdir()
+            removed.append(str(root_path) + "/")
+
+    if removed:
+        print(f"  Cleaned {len(removed)} intermediate file(s) from {output_dir}")
+
+
 def clear_vllm_source_tree(
     source_dir: str | Path,
     *,

@@ -4,5 +4,6 @@
         {"result_dir": "/path/to/single_trace_output/sglang"}
     ],
     "target_trace_id": 0,
-    "output_dir": "/path/to/cross_trace_output"
+    "output_dir": "/path/to/cross_trace_output",
+    "make_improvement_plan": false
 }

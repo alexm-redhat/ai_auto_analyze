@@ -44,11 +44,11 @@ class SingleTraceParams:
     output_size_range: str
     trace_file: str
     framework_source_code: str
-    trace_gpu_focus: str
-    run_command: str
+    trace_gpu_focus: str | None = None
+    run_command: str | None = None
     commit_id: str = "HEAD"
     run_log: str = ""
-    high_level_focus: str = ""
+    high_level_focus: str | None = None
     perf_analysis_focus: str | None = None
     skip_perf_analysis: bool = False
     max_gpu_ops: int = MAX_GPU_OPS
@@ -70,13 +70,15 @@ class SingleTraceParams:
             f"<framework_source_code> = {self.framework_source_code}",
             f"<trace_file> = {self.trace_file}",
             f"<trace_file_type> = {self.trace_file_type}",
-            f"<trace_gpu_focus> = {self.trace_gpu_focus.strip()}",
             f"<batch_size_range> = {self.batch_size_range}",
             f"<prefill_size_range> = {self.prefill_size_range}",
             f"<output_size_range> = {self.output_size_range}",
             f"<max_gpu_ops> = {self.max_gpu_ops}",
-            f"<run_command> = {self.run_command}",
         ]
+        if self.run_command:
+            lines.append(f"<run_command> = {self.run_command}")
+        if self.trace_gpu_focus is not None:
+            lines.append(f"<trace_gpu_focus> = {self.trace_gpu_focus.strip()}")
         if self.run_log:
             lines.append(f"<run_log> = {self.run_log}")
         if self.high_level_focus:
@@ -91,6 +93,11 @@ class SingleTraceParams:
         return "\n".join(lines)
 
     def gpu_focus_instruction(self):
+        if self.trace_gpu_focus is None:
+            return (
+                "For below, analyze all GPU operations in the trace"
+                " (single-GPU trace, no GPU filtering needed):"
+            )
         if self.trace_gpu_focus == TRACE_GPU_FOCUS_ALL:
             return (
                 "For below, analyze GPU operations across ALL GPUs"
@@ -133,6 +140,81 @@ class SingleTraceConfig(SingleTraceParams):
         path = os.path.join(self.output_dir, "result_metadata.json")
         with open(path, "w") as f:
             json.dump(metadata, f, indent=4)
+
+    def try_extract_run_command(self):
+        """Attempt to extract the run command from the run log file.
+
+        Called when run_command is None. Looks for the first line in the
+        run log that looks like a shell command. Handles shell prompts
+        (strips everything before '$ '), environment variable prefixes,
+        and multi-line commands joined with backslash continuations.
+
+        Returns True if a command was extracted, False otherwise.
+        """
+        if self.run_command:
+            return True
+        if not self.run_log or not os.path.exists(self.run_log):
+            print("WARNING: The RUN COMMAND is not detected in the run log"
+                  " (no run_log provided)")
+            return False
+
+        command_prefixes = (
+            "python", "python3", "torchrun", "nsys ", "docker ",
+            "mpirun", "deepspeed", "accelerate", "vllm ", "sglang",
+            "trtllm", "mpiexec", "bash ", "sh ", "./",
+        )
+
+        def _strip_shell_prompt(text):
+            idx = text.find("$ ")
+            if idx >= 0:
+                return text[idx + 2:]
+            return text
+
+        def _strip_env_vars(text):
+            """Return the text after any leading KEY=VALUE tokens."""
+            import re
+            return re.sub(r'^(\s*[A-Za-z_][A-Za-z0-9_]*=\S+\s+)+', '', text)
+
+        def _looks_like_command(text):
+            lower = text.lower()
+            return any(lower.startswith(p) for p in command_prefixes)
+
+        with open(self.run_log) as f:
+            lines = f.readlines()
+
+        for i, raw_line in enumerate(lines):
+            stripped = raw_line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+
+            after_prompt = _strip_shell_prompt(stripped)
+            after_env = _strip_env_vars(after_prompt).strip()
+
+            if _looks_like_command(after_prompt) or _looks_like_command(after_env):
+                cmd_parts = [after_prompt.rstrip("\\").rstrip()]
+                j = i + 1
+                while after_prompt.rstrip().endswith("\\") or (
+                    j < len(lines)
+                    and j == i + 1
+                    and cmd_parts[-1].endswith("\\")
+                ):
+                    if j >= len(lines):
+                        break
+                    cont = lines[j].strip()
+                    if not cont:
+                        break
+                    cmd_parts.append(cont.rstrip("\\").rstrip())
+                    if not lines[j].rstrip().endswith("\\"):
+                        break
+                    j += 1
+
+                self.run_command = " ".join(cmd_parts)
+                print(f"  [config] Detected run command from run log: "
+                      f"{self.run_command}")
+                return True
+
+        print("WARNING: The RUN COMMAND is not detected in the run log")
+        return False
 
     def prepare_source_code(self):
         src = self.framework_source_code
@@ -233,6 +315,8 @@ class SingleTraceConfig(SingleTraceParams):
         print(f"  [source] Ready: branch={current_branch}, HEAD={current_head}")
 
     def prepare_trace_file(self):
+        self.original_trace_file = self.trace_file
+
         if self.trace_file.endswith(".nsys-rep"):
             src = self.trace_file
             dst = os.path.join(
@@ -269,6 +353,16 @@ class SingleTraceConfig(SingleTraceParams):
             self.trace_file = dst
             print(f"    Done.  trace_file updated to: {dst}")
 
+    def cleanup_decompressed_trace(self):
+        """Remove the decompressed trace file if the original was gzipped."""
+        if not hasattr(self, "original_trace_file"):
+            return
+        if self.original_trace_file.endswith(".json.gz") and \
+                self.trace_file != self.original_trace_file and \
+                os.path.exists(self.trace_file):
+            os.remove(self.trace_file)
+            print(f"  Cleaned up decompressed trace: {self.trace_file}")
+
     def validate(self):
         errors = []
         if not self.framework_name:
@@ -283,8 +377,6 @@ class SingleTraceConfig(SingleTraceParams):
             errors.append("prefill_size_range is required")
         if not self.output_size_range:
             errors.append("output_size_range is required")
-        if not self.run_command:
-            errors.append("run_command is required")
 
         if not self.trace_file:
             errors.append("trace_file is required")
@@ -308,11 +400,11 @@ class SingleTraceConfig(SingleTraceParams):
         if self.run_log and not os.path.exists(self.run_log):
             errors.append(f"run_log not found: {self.run_log}")
 
-        focus = self.trace_gpu_focus.strip()
-        if focus != TRACE_GPU_FOCUS_ALL:
-            if not focus.isdigit():
+        if self.trace_gpu_focus is not None:
+            focus = self.trace_gpu_focus.strip()
+            if focus != TRACE_GPU_FOCUS_ALL and not focus.isdigit():
                 errors.append(
-                    f'trace_gpu_focus must be "ALL" or a non-negative '
+                    f'trace_gpu_focus must be null, "ALL", or a non-negative '
                     f'integer GPU ID, got "{self.trace_gpu_focus}"'
                 )
 

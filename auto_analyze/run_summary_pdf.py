@@ -6,7 +6,7 @@ Generates a professional PDF report from analysis results.
 
 Supports two input modes:
   (A) Single-trace: report from one framework's perf analysis
-  (B) Cross-trace:  report from cross-framework/regression comparison
+  (B) Cross-trace:  report from cross-framework/cross-commit comparison
 
 Usage:
     python -m auto_analyze.run_summary_pdf --single-config <config.json>
@@ -22,7 +22,7 @@ Arguments:
 Output:
     summary_report.pdf in the analysis results directory.
     - Mode A reads: run_params.txt, perf_analysis_single_trace.txt, median_block.txt, etc.
-    - Mode B reads: run_params_cross.txt, perf_analysis_cross_trace.txt, perf_matching_blocks.txt
+    - Mode B reads: run_params_cross.txt, cross_compare_blocks.txt, cross_matching_blocks.txt
 """
 
 import sys as _sys
