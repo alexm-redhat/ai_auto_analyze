@@ -118,7 +118,7 @@ Do the following:
     - A detailed sequence of the performance differences, sorted from negative to positive, where the negative are sorted from worst negative to less worst, and positive, from most positive to less positive. For each difference, provide:
         - An explanation of root causes, key findings/ideas that make this difference, and how it affects the comparison.
         - Provide code snippet examples to better explain why the difference exist.
-        - Provide source code / PR / commit references that are affecting/making this difference.
+        - Provide source code, pull-requests (PRs), or specific commit references and explanations that are responsible for this difference.
     - Make sure the summary is clear, concise and professional and it fully explains the differences between the blocks.
 
 Dump the comparison summary to [output_file].

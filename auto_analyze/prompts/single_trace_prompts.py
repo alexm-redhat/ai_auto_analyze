@@ -272,7 +272,11 @@ STEP 8 — WRITE OUTPUTS:
 FILE 1 — [output_file]: Structured text with:
     - Header (model, framework, GPU, block counts, warmup/cooldown, consistency)
     - A FULL properly aligned pipe-separated table for EACH AND EVERY detected block (not just the median — ALL blocks including warmup and cooldown). Each table has columns for:
-        - Unique high_level_op (do not skip)
+        - index
+        - high_level_op 
+        - kernel name
+        - cuda stream
+        - duration
         - source_code_ref: the file:line references where this kernel is launched
         - source_code_explanation: a detailed explanation of what this kernel does and its context in the call chain
       CRITICAL: Never truncate any cell value with "..." or ellipsis. Write the FULL text for every cell, even if it makes the line long. This applies to all columns, especially source_code_ref and source_code_explanation. Long lines are acceptable — truncated information is not.
