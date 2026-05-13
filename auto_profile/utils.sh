@@ -79,6 +79,7 @@ write_framework_commit() {
 
     local outfile="${dir}/commit_id.txt"
     local commit_id=""
+    local commit_date=""
     local version_str=""
     local source_path=""
 
@@ -109,7 +110,9 @@ for _ in range(5):
     if [[ -n "${source_path}" && -d "${source_path}/.git" ]]; then
         commit_id="$(git -C "${source_path}" rev-parse HEAD 2>/dev/null || true)"
         if [[ -n "${commit_id}" ]]; then
+            commit_date="$(git -C "${source_path}" log -1 --format='%ai' "${commit_id}" 2>/dev/null || true)"
             log_info "  Commit ID from git repo at ${source_path}: ${commit_id}"
+            log_info "  Commit date: ${commit_date}"
         fi
     fi
 
@@ -138,7 +141,9 @@ for _ in range(5):
             if [[ -n "${editable_src}" && -d "${editable_src}/.git" ]]; then
                 commit_id="$(git -C "${editable_src}" rev-parse HEAD 2>/dev/null || true)"
                 if [[ -n "${commit_id}" ]]; then
+                    commit_date="$(git -C "${editable_src}" log -1 --format='%ai' "${commit_id}" 2>/dev/null || true)"
                     log_info "  Commit ID from editable install at ${editable_src}: ${commit_id}"
+                    log_info "  Commit date: ${commit_date}"
                 fi
             fi
         fi
@@ -156,6 +161,9 @@ for _ in range(5):
     local metadata_file="${dir}/run_metadata.txt"
     if [[ -f "${metadata_file}" ]]; then
         echo "Framework Commit:  ${commit_id}" >> "${metadata_file}"
+        if [[ -n "${commit_date}" ]]; then
+            echo "Framework Commit Date: ${commit_date}" >> "${metadata_file}"
+        fi
         if [[ -n "${version_str}" ]]; then
             echo "Framework Version: ${version_str}" >> "${metadata_file}"
         fi

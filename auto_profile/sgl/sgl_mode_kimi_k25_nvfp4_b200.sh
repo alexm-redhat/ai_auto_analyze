@@ -1,6 +1,9 @@
 set -x
 
-EXTRA_PREPARE_CMDS="pip install --upgrade transformers"
+EXTRA_PREPARE_CMDS=(
+    "pip install --upgrade transformers"
+    "python -m pip install distro"
+)
 
 EXTRA_RUN_FLAGS="
     --mem-fraction-static=0.9 \

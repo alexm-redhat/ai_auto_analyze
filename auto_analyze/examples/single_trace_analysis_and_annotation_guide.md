@@ -4,7 +4,7 @@
 
 When profiling LLM inference frameworks (vLLM, SGLang, TensorRT-LLM), a raw GPU
 trace in Perfetto shows hundreds of low-level CUDA kernels with cryptic names
-like `cutlass_sm100_gemm_f16_64x128x32`. Understanding which transformer operation
+like `cutlass_sm100_gemm_f16_64x128x32` or `triton_red_fused_native_layer_norm_3`. Understanding which transformer operation
 each kernel belongs to — attention projection, MoE routing, allreduce — requires
 manually tracing the source code call chain for every kernel, which is extremely
 time-consuming.
@@ -24,21 +24,65 @@ The single-trace analysis pipeline automates this entirely. It:
 This gives you an instant, unified view of high-level to low-level operation
 mapping across all CUDA streams — no manual source code tracing needed.
 
+Below is an example annotated trace from Kimi-K2.5-NVFP4 running on vLLM with
+8xB200 GPUs (BS=1 decode). Each kernel is labeled with its high-level operation
+(e.g., `Attn: flashinfer_mla_decode_attn`, `MoE: moe_expert_gemm1_gate_up_silu`),
+and clicking any operation reveals its source code references and call chain.
+In this specific example, we can see the selected `moe_gate_router_gemm` operation
+with its `high_level_op`, `source_code` references, `call_chain`, and `kernel_name`
+details in the bottom panel:
+
+<p align="center">
+  <img src="cross_commit_cmp_example_kimi/kimi_annotated_trace.png" alt="Annotated trace in Perfetto" width="600">
+</p>
+
+An example of single trace analysis results is here:
+[vllm_kimi_v0.16.0/analyze](https://github.com/neuralmagic/ai_auto_perf_analysis/tree/main/auto_analyze/examples/cross_commit_cmp_example_kimi/vllm_kimi_v0.16.0/analyze)
+
+Here is a snippet from the [v0.16.0 median transformer block](https://github.com/neuralmagic/ai_auto_perf_analysis/blob/main/auto_analyze/examples/cross_commit_cmp_example_kimi/vllm_kimi_v0.16.0/analyze/median_block.txt) showing the high-level to
+low-level correlation (Kimi-K2.5 MoE decoder layer, 29 operations across 2 CUDA streams):
+
+<sub>
+
+| # | High-Level Operation | Kernel Name | Source Code Ref | Stream | Dur (ns) |
+|--:|----------------------|-------------|-----------------|-------:|---:|
+| 3 | Attn: qkv_a_proj_gemm | `nvjet_tst_16x64_64x16_4x1_v_bz_TNN` | mla.py:132, deepseek_v2.py:759 | 23 | 18,112 |
+| 4 | Attn: q_a_layernorm_elementwise | `triton_poi_fused_1` | mla.py:137, layernorm.py:93 | 23 | 1,600 |
+| 5 | Attn: q_a_layernorm_reduce | `triton_red_fused_2` | mla.py:137, layernorm.py:93 | 23 | 2,080 |
+| 6 | Attn: q_b_proj_gemm | `nvjet_tst_16x64_64x16_4x1_v_bz_TNN` | mla.py:138, deepseek_v2.py:778 | 23 | 5,280 |
+| 7 | Attn: rope_kva_layernorm_fused | `triton_poi_fused_add_clone_copy_...` | mla.py:149-159 | 23 | 2,240 |
+| 8 | Attn: kv_cache_store | `concat_and_cache_mla_kernel` | mla_attention.py:524-531 | 23 | 2,303 |
+| 9 | Attn: q_absorption_bmm | `nvjet_tst_64x8_64x16_4x1_v_bz_NNT` | mla_attention.py:601-615 | 23 | 2,815 |
+| 10 | Attn: q_latent_pe_concat_fp8_prep | `triton_poi_fused__to_copy_cat_...` | mla_attention.py:620-624 | 23 | 1,792 |
+| 11 | Attn: decode_mla_attention | `fmhaSm100fKernel_QkvE4m3O...` | mla_attention.py:635 | 23 | 9,184 |
+| 12 | Attn: v_up_proj_bmm | `nvjet_tst_8x64_64x16_4x1_v_bz_TNN` | mla_attention.py:647 | 23 | 3,552 |
+| 13 | Attn: o_proj_gemm | `nvjet_tst_64x8_64x16_4x1_v_bz_TNT` | mla.py:176, deepseek_v2.py:801 | 23 | 5,248 |
+| 14 | Comm: fused_allreduce_post_attn | `allreduce_fusion_kernel` | allreduce_rms_fusion.py:85-150 | 23 | 10,016 |
+| 15 | Comm: allreduce_completion_memcpy | `memcpy32_post` | allreduce_rms_fusion.py:85-150 | 23 | 1,056 |
+| 16 | MoE: moe_gate_router_gemm | `nvjet_tst_8x64_64x16_4x1_v_bz_TNN` | deepseek_v2.py:251-257 | 23 | 10,880 |
+| 17 | ShExp: gate_up_act_fp4_quant | `cvt_fp16_to_fp4` | nvfp4_utils.py:214 | 5518 | 2,721 |
+| | *...29 ops total* | | | | *123,232* |
+
+</sub>
+
+Each operation also includes a detailed **source code explanation** column (not
+shown above due to space constraints) describing what the kernel computes and how
+it fits in the transformer block. For example:
+
+> **qkv_a_proj_gemm** — MergedColumnParallelLinear (replicated, disable_tp=True)
+> computing fused Q/KV low-rank projection. BF16 GEMM: [B,7168] x [7168,2112] ->
+> [B,2112]. Output split into q_c=[B,1536] and kv_lora=[B,576]. Uses CUTLASS
+> nvjet kernel.
+
+> **rope_kva_layernorm_fused** — Torch.compile fused kernel combining: KV split
+> (kv_c=[B,512], k_pe=[B,64]), RMSNorm(512) on kv_c, Q reshape, k_pe unsqueeze,
+> and YaRN-scaled RoPE application. All from mla.py:149-159.
+
 The single-trace analysis is also the foundation for **cross-commit comparison**,
 where two single-trace results are compared to identify kernel-level performance
 differences between framework versions. See
 [Cross-Commit Performance Comparison](cross_commit_comparison_guide.md) for the
 next step after completing single-trace analysis.
-
-## What the Annotated Trace Contains
-
-When you open the annotated trace in Perfetto, each kernel event includes:
-
-- **High-level operation name** — e.g., `fused_qkv_a_proj_gemm`, `flashinfer_mla_decode_attn`, `moe_expert_gemm1_gate_up_silu`
-- **Category prefix** — e.g., `Attn:`, `MoE:`, `Comm:`, `ShExp:` for quick visual grouping
-- **Source code references** — file:line locations in the framework source code
-- **Call chain** — the full call path from the decoder layer's `forward()` method down to the kernel launch
-- **CUDA stream layout** — operations are organized by their actual CUDA streams, with overlap lanes for concurrent execution (PDL)
 
 ## End-to-End Walkthrough
 
@@ -53,7 +97,7 @@ example. The same process applies to any framework and model.
 ### Step 1: Generate a PyTorch Trace
 
 First, capture a profiling trace of the workload you want to analyze. See
-`auto_analyze/examples/vllm_generate_trace_example.md` for detailed instructions
+[vllm_generate_trace_example.md](vllm_generate_trace_example.md) for detailed instructions
 on server/client trace generation.
 
 The key outputs from this step are:
@@ -92,10 +136,12 @@ OUTPUT_CONFIG_FILE="/path/to/single_trace_config_kimi_vllm"
 - `TRACE_FILE`: For PyTorch traces with tensor parallelism, each GPU produces a
   separate trace file. Pick any single rank (e.g., rank 0) — they all execute the
   same operations.
-- `COMMIT_ID`: The exact git commit of the framework used during the trace capture.
-  Use `"HEAD"` if the source code is already at the correct commit.
+- `RUN_LOG`: Should be the full execution log including the run command and its
+  parameters at the top. The framework name and run command are auto-extracted from it.
 - `SOURCE_CODE`: Must be a clean git repo with no modified or uncommitted files.
   The analysis automatically creates a separate branch for the specified commit ID.
+- `COMMIT_ID`: The exact git commit of the framework used during the trace capture.
+  Use `"HEAD"` if the source code is already at the correct commit.
 
 ### Step 3: Create the Analysis Config
 
@@ -162,12 +208,6 @@ Open the annotated trace in Perfetto:
 2. Open `$ANALYZE_OUTPUT_DIR/single_trace_transformer_block.json`
 3. Click any kernel to see its high-level operation, source code location, and call chain
 
-Below is an example of the annotated trace for Kimi-K2.5-NVFP4 on vLLM, showing
-kernel operations organized by CUDA stream with high-level labels, source code
-references, and call chains visible in the detail panel:
-
-![Annotated trace in Perfetto](cross_commit_cmp_example_kimi/kimi_annotated_trace.png)
-
 A human-readable summary is also available at
 `$ANALYZE_OUTPUT_DIR/single_trace_transformer_block.txt`.
 
@@ -185,6 +225,9 @@ After the analysis completes, the output directory contains:
 | `median_block.txt` | The selected median transformer block |
 | `run_params.txt` | Run parameters for downstream tools |
 | `run_originals/` | Copies of the original trace file, run command, and run log |
+
+An example of these output files is available at:
+[vllm_kimi_v0.16.0/analyze](https://github.com/neuralmagic/ai_auto_perf_analysis/tree/main/auto_analyze/examples/cross_commit_cmp_example_kimi/vllm_kimi_v0.16.0/analyze)
 
 ## Optional: Enable Performance Analysis
 

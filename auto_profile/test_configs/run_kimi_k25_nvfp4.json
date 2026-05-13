@@ -8,6 +8,6 @@
         }
     ],
     "concurrencies": [1],
-    "frameworks": ["vllm", "sgl"],
-    "enable_traces": ["vllm", "sgl"]
+    "frameworks": ["sgl"],
+    "enable_traces": ["sgl"]
 }

@@ -36,7 +36,7 @@ for p in "${PROFILES[@]}"; do
             
             ((num_requests = concurrency * NUM_WAVES))
 
-            EXTRA_PREPARE_CMDS=""
+            EXTRA_PREPARE_CMDS=()
             EXTRA_RUN_FLAGS=""
 
             # Set extra env vars
@@ -145,11 +145,13 @@ for p in "${PROFILES[@]}"; do
                 
 
             # Run prepare cmds
-            # Run prepare cmds
-            if [[ -n "$EXTRA_PREPARE_CMDS" ]]; then
+            if [[ ${#EXTRA_PREPARE_CMDS[@]} -gt 0 ]]; then
                 log_info "RUN PREPARE"
-                run_and_log ${run_prepare_filename} \
-                    ${EXTRA_PREPARE_CMDS}
+                for prep_cmd in "${EXTRA_PREPARE_CMDS[@]}"; do
+                    log_info "  Running: ${prep_cmd}"
+                    run_and_log ${run_prepare_filename} \
+                        bash -c "${prep_cmd}"
+                done
             fi
             
             # Run main cmd

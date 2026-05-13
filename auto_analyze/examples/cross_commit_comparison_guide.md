@@ -215,7 +215,7 @@ The TARGET (v0.20.2) is 21.3% faster per MoE decoder layer than the baseline (v0
 - cuBLASLt nvjet GEMM regressions from CUDA 13.0 vs 12.9 library change (+1.8 us)
 
 The full example with detailed source code analysis is at
-`auto_analyze/examples/cross_commit_cmp_example_kimi/`.
+[cross_commit_cmp_example_kimi](https://github.com/neuralmagic/ai_auto_perf_analysis/tree/main/auto_analyze/examples/cross_commit_cmp_example_kimi).
 
 ## Directory Structure
 
