@@ -1,20 +1,34 @@
-# Annotating GPU Traces with High-Level Operations
+# Single-Trace Analysis and High-Level Trace Annotation
 
 ## Motivation
 
-When analyzing GPU traces of LLM inference frameworks (vLLM, SGLang, TensorRT-LLM),
-a raw trace in Perfetto shows hundreds of low-level CUDA kernels with cryptic names
+When profiling LLM inference frameworks (vLLM, SGLang, TensorRT-LLM), a raw GPU
+trace in Perfetto shows hundreds of low-level CUDA kernels with cryptic names
 like `cutlass_sm100_gemm_f16_64x128x32`. Understanding which transformer operation
 each kernel belongs to — attention projection, MoE routing, allreduce — requires
 manually tracing the source code call chain for every kernel, which is extremely
 time-consuming.
 
-The single-trace analysis pipeline automates this entirely. It produces an
-**annotated trace file** (`single_trace_transformer_block.json`) that you can open
-in [Perfetto](https://ui.perfetto.dev) where every kernel is labeled with its
-high-level operation name, source code references, and call chain. This gives you
-an instant, unified view of high-level to low-level operation mapping across all
-CUDA streams.
+The single-trace analysis pipeline automates this entirely. It:
+
+1. **Analyzes the framework source code** to identify the high-level operations
+   in each transformer block type (attention projections, MoE routing, allreduce, etc.)
+2. **Extracts all GPU operations** from the trace with timestamps, streams, and
+   launch parameters
+3. **Correlates every low-level kernel** to its high-level transformer block
+   operation through source code deep-dive analysis
+4. **Produces an annotated trace** (`single_trace_transformer_block.json`) that
+   you can open in [Perfetto](https://ui.perfetto.dev) where every kernel is
+   labeled with its high-level operation name, source code references, and call chain
+
+This gives you an instant, unified view of high-level to low-level operation
+mapping across all CUDA streams — no manual source code tracing needed.
+
+The single-trace analysis is also the foundation for **cross-commit comparison**,
+where two single-trace results are compared to identify kernel-level performance
+differences between framework versions. See
+[Cross-Commit Performance Comparison](cross_commit_comparison_guide.md) for the
+next step after completing single-trace analysis.
 
 ## What the Annotated Trace Contains
 
@@ -148,6 +162,12 @@ Open the annotated trace in Perfetto:
 2. Open `$ANALYZE_OUTPUT_DIR/single_trace_transformer_block.json`
 3. Click any kernel to see its high-level operation, source code location, and call chain
 
+Below is an example of the annotated trace for Kimi-K2.5-NVFP4 on vLLM, showing
+kernel operations organized by CUDA stream with high-level labels, source code
+references, and call chains visible in the detail panel:
+
+![Annotated trace in Perfetto](cross_commit_cmp_example_kimi/kimi_annotated_trace.png)
+
 A human-readable summary is also available at
 `$ANALYZE_OUTPUT_DIR/single_trace_transformer_block.txt`.
 
@@ -180,3 +200,12 @@ python -m auto_analyze.create_single_trace_config \
 
 This adds a `perf_analysis_single_trace.txt` output with bottleneck identification,
 improvement proposals with code snippets, and impact estimates.
+
+## Next Step: Cross-Commit Comparison
+
+Once you have single-trace analysis results for two commits of the same framework,
+you can compare them to identify kernel-level performance differences — which
+operations improved and which regressed between versions.
+
+See [Cross-Commit Performance Comparison](cross_commit_comparison_guide.md) for
+the full walkthrough.
