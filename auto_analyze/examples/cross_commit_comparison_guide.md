@@ -17,9 +17,82 @@ results from different commits of the same framework, it:
 3. **Optionally generates an improvement plan** with step-by-step coding guides
    to recover any regressions
 
-This guide walks through the complete process using a concrete example: comparing
-vLLM `v0.16.0` against the latest `main` branch running Kimi-K2.5-NVFP4 on B200
-GPUs in a low-latency pure-decode configuration.
+This guide walks through the complete process using a concrete example: [comparing
+vLLM `v0.16.0` (Feb 12, 2026) against the latest `main` branch (May 12, 2026)](https://github.com/neuralmagic/ai_auto_perf_analysis/tree/main/auto_analyze/examples/cross_commit_cmp_example_kimi) running Kimi-K2.5-NVFP4 on B200
+GPUs in a low-latency pure-decode configuration (BS=1, ISL=4, OSL=1024).
+
+The analysis found that `main` is **21.3% faster** per MoE decoder layer than
+`v0.16.0` (96.9 us vs 123.2 us per block). The improvement comes primarily from
+three purpose-built CUDA kernels that replaced generic cuBLASLt GEMMs and fused
+multiple PyTorch-dispatched operations into single monolithic kernels. These gains
+are partially offset by new buffer initialization overhead and a cuBLAS library
+regression.
+
+```
+Block wall time:  TARGET = 96,992 ns  |  Baseline = 123,232 ns  |  Delta = -26,240 ns (-21.3%)
+```
+
+**Improvements:**
+
+| # | Root Cause | Impact | Origin/PR/Commit |
+|---|------------|-------:|------------------|
+| 1 | QKV-A projection GEMM → `dsv3_fused_a_gemm` | 41% | [#34758](https://github.com/vllm-project/vllm/pull/34758) |
+| 2 | MoE gate routing GEMM → `dsv3_router_gemm` | 30% | [#34302](https://github.com/vllm-project/vllm/pull/34302) |
+| 3 | MoE routing: 4 kernels → 1 monolithic TRT-LLM kernel | 29% | FlashInfer 0.6.3→0.6.8 upgrade |
+
+**Improvement details:**
+
+1. **QKV-A Projection GEMM** (saves 10.8 us) — The generic cuBLASLt CUTLASS BF16
+   GEMM (`nvjet_tst_...TNN`, 18.1 us) was replaced with `dsv3_fused_a_gemm`
+   (7.3 us), a hand-tuned warp-specialized CUDA kernel adapted from TRT-LLM's
+   DeepSeek V3 minimum-latency kernels. It uses compile-time shape specialization
+   for [M<=16, K=7168, N=2112], dual tile-N variants for optimal small-batch
+   coverage, and PDL for kernel pipelining.
+
+2. **MoE Gate Router GEMM** (saves 8.0 us) — The generic cuBLASLt GEMM
+   (`nvjet_tst_...TNN`, 10.9 us) was replaced with `dsv3_router_gemm` (2.9 us),
+   a one-block-per-expert kernel (grid=384) with compile-time template
+   specialization for the extremely skinny [M<=16, N=384, K=7168] shape. Uses
+   warp-level shuffle reduction instead of shared memory.
+
+3. **MoE Routing Dispatch Consolidation** (saves 7.6 us) — Four separate
+   PyTorch-dispatched kernels (sigmoid scoring, bias correction, top-k expert
+   selection, index clustering — totaling 15.3 us) were consolidated into a single
+   monolithic TRT-LLM `routingIndicesBlockKernel` (7.6 us). Data stays in shared
+   memory between routing stages, eliminating 3 kernel launch overheads and global
+   memory round-trips. Enabled by FlashInfer upgrade and vLLM backend selection
+   routing to `Fp8MoeBackend.FLASHINFER_TRTLLM` on SM100.
+
+**Regressions:**
+
+| # | Root Cause | Impact | Origin/PR/Commit |
+|---|------------|-------:|------------------|
+| 1 | New buffer-init and dtype-cast ops for TRT-LLM MoE | +3.3 us | FlashInfer 0.6.3→0.6.8 upgrade TRT-LLM MoE pipeline |
+| 2 | New shared expert buffer-init ops on aux stream | +2.8 us | FlashInfer 0.6.3→0.6.8 upgrade CUTLASS FP4 kernel |
+| 3 | cuBLASLt nvjet GEMM heuristic change | +1.8 us | CUDA 13.0.2 cuBLASLt codegen |
+| 4 | Post-MoE allreduce variance | +1.0 us | FlashInfer 0.6.3→0.6.8 upgrade unified allreduce API |
+
+**Regression details (selected):**
+
+1. **New TRT-LLM MoE buffer-init ops** (+3.3 us) — The monolithic TRT-LLM MoE
+   kernel (which saved 7.6 us above) requires two new setup operations that didn't
+   exist in the old non-monolithic path: `moe_route_buffer_init` (1.6 us) to
+   zero-initialize routing workspace arrays, and `moe_input_bf16_cast` (1.7 us)
+   to convert hidden states for the TRT-LLM routing kernel format. These could
+   potentially be eliminated by pre-allocating persistent buffers or fusing the
+   memset into the routing kernel's prologue.
+
+2. **New shared expert buffer-init ops** (+2.8 us) — Two `FillFunctor` memset
+   operations appeared on the auxiliary shared-expert CUDA stream, initializing
+   output buffers for the CUTLASS FP4 GEMMs: `shared_expert_gateup_buf_init`
+   (1.6 us) and `shared_expert_down_buf_init` (1.2 us). In v0.16.0, the shared
+   expert path used pre-warmed memory regions. The FlashInfer 0.6.8 CUTLASS FP4
+   kernel requires explicit buffer initialization for its epilogue. Since these
+   ops run on the aux stream concurrently with MoE routing on the main stream,
+   their wall-time impact is minimal — but they are visible in the trace.
+
+The full example with detailed source code analysis is at
+[cross_commit_cmp_example_kimi](https://github.com/neuralmagic/ai_auto_perf_analysis/tree/main/auto_analyze/examples/cross_commit_cmp_example_kimi).
 
 ## Prerequisites
 
@@ -174,74 +247,3 @@ The comparison report (`cross_compare_blocks.txt`) includes:
   improvement vs. regression breakdown
 - **Detailed differences** — sorted from worst regression to best improvement,
   each with root cause analysis, code snippets, and source references
-
-## Example Results
-
-From the included example comparing vLLM `main` (commit `8f89381f`) against
-`v0.16.0` (commit `89a77b10`) on Kimi-K2.5-NVFP4 / B200 / BS=1 decode:
-
-```
-Block wall time:  TARGET = 96,992 ns  |  Baseline = 123,232 ns  |  Delta = -26,240 ns (-21.3%)
-
-The TARGET (v0.20.2) is 21.3% faster per MoE decoder layer than the baseline (v0.16.0).
-```
-
-**Top improvements identified:**
-
-1. **QKV-A Projection GEMM** — saves 10.8 us (41% of total improvement)
-   - Replaced generic cuBLASLt CUTLASS BF16 GEMM with `dsv3_fused_a_gemm`, a
-     hand-tuned warp-specialized CUDA kernel adapted from TRT-LLM's DeepSeek V3
-     minimum-latency kernels. Uses compile-time shape specialization for
-     [M<=16, K=7168, N=2112] and PDL for kernel pipelining.
-   - PR #34758 by Robert Shaw, Feb 2026
-
-2. **MoE Gate Router GEMM** — saves 8.0 us (30% of total improvement)
-   - Replaced generic cuBLASLt GEMM with `dsv3_router_gemm`, a one-block-per-expert
-     kernel with compile-time template specialization for the extremely skinny
-     [M<=16, N=384, K=7168] shape. Uses warp-level shuffle reduction instead of
-     shared memory.
-   - PR #34302 by Robert Shaw, Feb 2026
-
-3. **MoE Routing Dispatch Consolidation** — saves 7.6 us (29% of total improvement)
-   - Consolidated 4 separate PyTorch-dispatched kernels (sigmoid, bias correction,
-     top-k selection, index clustering) into a single monolithic TRT-LLM kernel
-     via FlashInfer. Data stays in shared memory between routing stages, eliminating
-     3 kernel launch overheads and global memory round-trips.
-   - Enabled by FlashInfer upgrade (0.6.3 to 0.6.8) and vLLM backend selection
-     routing to `Fp8MoeBackend.FLASHINFER_TRTLLM` on SM100
-
-**Partially offset by:**
-- New buffer-init and dtype-cast ops added for TRT-LLM MoE (+6.0 us)
-- cuBLASLt nvjet GEMM regressions from CUDA 13.0 vs 12.9 library change (+1.8 us)
-
-The full example with detailed source code analysis is at
-[cross_commit_cmp_example_kimi](https://github.com/neuralmagic/ai_auto_perf_analysis/tree/main/auto_analyze/examples/cross_commit_cmp_example_kimi).
-
-## Directory Structure
-
-A complete cross-commit comparison has this layout:
-
-```
-results/
-  vllm_latest/
-    run_log.txt                     # Run log from trace capture
-    trace/                          # Raw trace files
-    single_trace_config.json        # Single-trace config
-    analyze/                        # Single-trace analysis output
-      median_block.txt
-      transformer_block_high_level_ops.txt
-      single_trace_transformer_block.json
-      ...
-  vllm_v0.16.0/
-    run_log.txt
-    trace/
-    single_trace_config.json
-    analyze/
-      ...
-  cross_config.json                 # Cross-trace config
-  cross_analyze/                    # Cross-trace analysis output
-    cross_matching_blocks.txt
-    cross_compare_blocks.txt
-    cross_improvement_plan.txt      # (if enabled)
-    run_params_cross.txt
-```

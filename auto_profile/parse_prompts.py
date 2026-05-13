@@ -11,6 +11,9 @@ class ParseResultsPrompt:
 The goal of this task is to parse and compare benchmark and profiling results of 3 frameworks: vllm, sgl and trt.
 For this task think hard.
 
+IMPORTANT: All output files, helper scripts, generated code, and any other artifacts
+must be written to <output_dir> or its subdirectories. Do not create files anywhere else.
+
 <results_dir> = {results_dir} 
 <output_dir> = {output_dir} 
 <metadata_file> = run_metadata.txt
@@ -67,9 +70,11 @@ Now do the following:
         - Get the framework source code path from source_codes.json
         - Get the framework commit id from metadata.txt. If does not exist, then try to extract it from the run log, and if not found, then default to HEAD.
         - Extract the run_command from the run log txt file and use it in the json config
+        - For run log, prefer the non-profile log
         - For trace file, if it is NSYS, then prefer the *.sqlite version as the path (if exists).
+        - If this is an NSYS trace, then make trace_gpu_focus on GPU 0
         - Ensure skip_perf_analysis is set to true (this is a cross framework comparison)
-    - A cross trace config json file that compares all of the frameworks involved where the target framework is vllm. Based on the example file cross_trace_config_example.json and the previously generated single trace json configs.
+    - A cross trace config json file that compares all of the frameworks involved where the target framework is vllm. Based on the example file cross_trace_config_example.json and the previously generated single trace json configs. Ensure make_improvement_plan is set to true.
 
 """
 
