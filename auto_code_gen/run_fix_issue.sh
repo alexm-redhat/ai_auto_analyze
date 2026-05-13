@@ -1,12 +1,12 @@
 #!/bin/bash
 
-source auto_profile/utils.sh
+source "$(dirname "$0")/../auto_profile/utils.sh"
 
 PRS_DIR="/home/alexm-redhat/code/ai_auto_perf_analysis/auto_code_gen/prs"
 ISSUE_DIR="issue_1"
 
 # Run
-source "$(dirname "$0")/env.sh"
+source "$(dirname "$0")/../env.sh"
 python -m auto_code_gen.run_fix_issue \
     --high_level_code_plan_file ${PRS_DIR}/high_level_code_plan.txt \
     --prs_dir ${PRS_DIR} \

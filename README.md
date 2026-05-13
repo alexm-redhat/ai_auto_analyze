@@ -1,295 +1,239 @@
-# AI Auto Performance Analysis
+# AI-Based Automatic Performance Analysis
 
-An AI-powered framework for automated performance analysis, comparison, and optimization of LLM inference frameworks (vLLM, SGLang, TensorRT-LLM). Uses Claude as an AI agent to profile inference workloads, analyze NSYS GPU traces, generate improvement plans, and produce code patches that port optimizations between frameworks.
+End-to-end automation for profiling, analyzing, and comparing GPU traces of LLM inference frameworks (vLLM, SGLang, TensorRT-LLM). Uses Claude as an AI agent to correlate low-level GPU kernels with high-level transformer operations, perform cross-commit regression analysis between framework versions and cross-framework comparisons between different frameworks, and generate improvement plans with step-by-step coding guides.
 
 ## Overview
 
-Manual analysis of GPU profile traces is labor-intensive and error-prone, particularly when correlating low-level GPU operations with high-level Python/C++/CUDA code across multiple inference frameworks. This tool automates the entire workflow:
+Manual analysis of GPU profile traces is labor-intensive, particularly when correlating hundreds of low-level CUDA kernels with high-level Python/C++/CUDA code. This tool automates the entire workflow:
 
-1. **Profile** -- Run inference benchmarks inside Docker containers with NSYS GPU profiling
-2. **Analyze** -- Use Claude to correlate GPU operations with source code, compare transformer blocks across frameworks, and generate ranked improvement plans
-3. **Generate Code** -- Use Claude to port optimizations from the faster framework to the slower one, with iterative review cycles
+1. **Single-Trace Analysis** — Analyze a single framework's GPU trace to extract transformer block structure, correlate every GPU kernel to its high-level operation, and produce an annotated trace viewable in Perfetto
+2. **Cross-Trace Analysis** — Compare two single-trace results (different commits or different frameworks) to identify all performance differences with root cause analysis and optional improvement plans
+3. **Profiling** *(optional)* — Run inference benchmarks with GPU profiling and auto-generate analysis configs
+4. **Code Generation** *(optional)* — Port optimizations from a faster framework to a slower one
 
 ## Project Structure
 
 ```
 ai_auto_perf_analysis/
-|-- common/                        # Shared utilities
-|   |-- utils.py                   #   Tee, setup_logging, safe_clean_dir
-|-- auto_profile/                  # Profiling orchestration
-|   |-- run_profile.sh             #   Main profiling script (runs inside Docker)
-|   |-- run_summary.py             #   Summarize profiling results into analyze configs
-|   |-- config.sh                  #   Framework constants, NSYS flags, test params
-|   |-- parse_run_config.py        #   Config parser and validator
-|   |-- parse_prompts.py           #   Claude prompts for result summarization
-|   |-- utils.sh                   #   Shell utility functions
-|   |-- vllm/                      #   vLLM Docker runner, bench scripts, mode configs
-|   |-- sgl/                       #   SGLang Docker runner, bench scripts, mode configs
-|   |-- trt/                       #   TensorRT-LLM Docker runner, bench scripts
-|   +-- test_configs/              #   JSON configs (infra, run, docker images, GPUs)
-|-- auto_analyze/                  # 4-step analysis pipeline
-|   |-- run_analyze.py             #   Step 1: Analyze traces and generate improvement plan
-|   |-- run_summary_pdf.py         #   Step 2: Generate PDF report
-|   |-- run_combined_trace.py      #   Step 3: Generate combined Chrome trace
-|   |-- run_create_jiras.py        #   Step 4: Create JIRA tasks
-|   |-- analyze_configs.py         #   AnalyzeConfig, ClaudeConfig, config loading
-|   |-- analyze_prompts.py         #   All prompt templates for the 4 steps
-|   +-- analyze_config_example.json #  Example analysis config
-|-- auto_code_gen/                 # AI-based code generation pipeline
-|   |-- run_code_gen.py            #   Generate code patches from improvement plans
-|   |-- run_fix_issue.py           #   Fix issues encountered during code gen
-|   |-- run_investigate_issue.py   #   Deep-dive investigation of runtime issues
-|   |-- run_work_items.py          #   Execute work items (rebase, PR review, etc.)
-|   |-- run_summary.py             #   Generate PPTX summary of code gen process
-|   |-- code_gen_configs.py        #   CodeGenConfig and hardcoded test parameters
-|   +-- code_gen_prompts.py        #   All prompt templates for code generation
-|-- claude_utils.py                # Claude Agent SDK wrapper (async prompt execution)
-|-- env.sh                         # Shared environment variables
-|-- run_all.sh                     # Full pipeline orchestrator
-|-- config_deepseek_r1_nvfp4.sh # Example pipeline config
-|-- run_profile_core.sh            # Run profiling step
-|-- run_profile_summary.sh         # Run profile summarization step
-|-- run_analyze_core.sh            # Run analysis step (standalone)
-|-- run_analyze_summary_pdf.sh     # Run PDF generation step (standalone)
-|-- run_analyze_combined_trace.sh  # Run combined trace step (standalone)
-|-- run_analyze_create_jiras.sh    # Run JIRA creation step (standalone)
-|-- run_code_gen.sh                # Run code generation
-|-- logs/                          # Runtime logs (auto-created)
-+-- docs/                          # Documentation
+├── common/                             # Shared utilities
+│   ├── claude_utils.py                 #   Claude Agent SDK wrapper
+│   ├── utils.py                        #   Logging, directory cleanup, output dir helpers
+│   └── convert_nsys_to_sqlite.sh       #   NSYS trace format converter
+├── auto_analyze/                       # Analysis pipeline
+│   ├── run_single_trace.py             #   Single-trace analysis entry point
+│   ├── run_cross_trace.py              #   Cross-trace analysis entry point
+│   ├── run_chrome_trace.py             #   Chrome trace JSON generation
+│   ├── run_summary_pdf.py              #   PDF report generation
+│   ├── run_jiras.py                    #   JIRA task creation
+│   ├── create_single_trace_config.py   #   Helper: generate single-trace config JSON
+│   ├── create_cross_trace_config.py    #   Helper: generate cross-trace config JSON
+│   ├── configs/                        #   Config dataclasses and examples
+│   │   ├── single_trace_config.py
+│   │   ├── single_trace_config_example.json
+│   │   ├── cross_trace_config.py
+│   │   ├── cross_trace_config_example.json
+│   │   └── claude_config.json
+│   ├── prompts/                        #   Prompt templates for all analysis steps
+│   │   ├── single_trace_prompts.py
+│   │   ├── cross_trace_prompts.py
+│   │   ├── chrome_trace_prompts.py
+│   │   ├── jira_prompts.py
+│   │   └── summary_pdf_prompts.py
+│   └── examples/                       #   Guides and example runs
+├── auto_profile/                       # Profiling orchestration
+│   ├── run_profile_core.sh             #   Main profiling script
+│   ├── run_profile_summary.py          #   Parse results into analysis configs
+│   ├── parse_run_config.py             #   Config parser and validator
+│   └── test_configs/                   #   JSON configs (infra, run, docker, GPUs)
+├── auto_code_gen/                      # AI-based code generation pipeline
+│   ├── run_code_gen.py
+│   ├── run_fix_issue.py
+│   ├── run_investigate_issue.py
+│   ├── run_work_items.py
+│   └── run_summary.py
+├── env.sh                              # Environment variables
+├── run_all.sh                          # Full pipeline orchestrator
+└── run_all_scheduled.sh                # Scheduled pipeline execution
 ```
 
 ## Prerequisites
 
-- Python 3.8+
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
+- Python 3.10+
 - [Claude Agent Python SDK](https://pypi.org/project/claude-agent-sdk/) (`pip install claude-agent-sdk`)
-- Docker (for running inference framework containers)
-- NVIDIA Nsight Systems (`nsys`) for GPU profiling
-- `colorama` Python package (`pip install colorama`)
-- `reportlab` and `pygments` Python packages (for PDF generation)
+- Framework source code (clean git repos for each framework being analyzed)
+- GPU trace files (PyTorch Chrome traces or NSYS traces)
 
-## Pipeline
+## Quick Start
 
-### Phase 1: Profiling (`auto_profile/`)
+### Single-Trace Analysis
 
-Runs inference benchmarks inside Docker containers with NSYS GPU tracing enabled.
-
-#### Configuration
-
-Two JSON config files are required:
-
-**Infrastructure config** (`auto_profile/test_configs/infra_config.json`):
-
-```json
-{
-    "docker_images_file": "auto_profile/test_configs/docker_images.json",
-    "gpu_configs_file": "auto_profile/test_configs/gpu_configs.json",
-    "exec_modes_file": "auto_profile/test_configs/exec_modes.json"
-}
-```
-
-**Run config** (e.g., `auto_profile/test_configs/run_deepseek_r1_nvfp4.json`):
-
-```json
-{
-    "profiles": [
-        {
-            "model": "nvidia/DeepSeek-R1-NVFP4",
-            "gpu_ids": "gpu_ids_4",
-            "exec_mode": "pure_decode",
-            "modes": ["vllm_kimi_k25_nvfp4_b200", "trt_moe_trtllm_b200"]
-        }
-    ],
-    "concurrencies": [1],
-    "frameworks": ["vllm", "sgl"],
-    "enable_traces": ["vllm", "sgl"]
-}
-```
-
-#### Running
+Analyze one framework's GPU trace to produce an annotated trace with high-level operation labels:
 
 ```bash
-./run_profile_core.sh
+# 1. Create the analysis config
+python -m auto_analyze.create_single_trace_config \
+    --model nvidia/Kimi-K2.5-NVFP4 \
+    --gpu-type B200 \
+    --batch-size-range 1 \
+    --prefill-size-range 4 \
+    --output-size-range 1024 \
+    --trace-file /path/to/trace.json.gz \
+    --run-log-file /path/to/run_log.txt \
+    --clean-source-code-path /path/to/vllm \
+    --commit-id HEAD \
+    --analyze-output-dir /path/to/output \
+    --output-config-file /path/to/config
+
+# 2. Run the analysis
+python -m auto_analyze.run_single_trace --config /path/to/config.json
+
+# 3. Open the annotated trace in Perfetto
+#    -> /path/to/output/single_trace_transformer_block.json
 ```
 
-This calls `auto_profile/run_profile.sh` which launches Docker containers for each framework, runs benchmarks, and collects NSYS traces.
+### Cross-Trace Analysis
 
-#### Summarization
-
-After profiling, summarize results into per-test-case analyze configs:
+Compare two single-trace results to identify performance differences:
 
 ```bash
-./run_profile_summary.sh
+# 1. Run single-trace analysis for each commit (see above)
+
+# 2. Create the cross-trace config
+python -m auto_analyze.create_cross_trace_config \
+    --trace-result-dir /path/to/commit_a/analyze \
+    --trace-result-dir /path/to/commit_b/analyze \
+    --target-trace-id 0 \
+    --analyze-output-dir /path/to/cross_output \
+    --output-config-file /path/to/cross_config
+
+# 3. Run the cross-trace analysis
+python -m auto_analyze.run_cross_trace --config /path/to/cross_config.json
 ```
 
-This uses Claude to parse profiling results and generate `analyze_*.json` config files in the output directory.
+## Analysis Pipeline
 
-### Phase 2: Analysis (`auto_analyze/`)
+### Single-Trace Analysis (`run_single_trace.py`)
 
-A 4-step pipeline that uses Claude to analyze NSYS GPU traces and generate improvement plans.
+Analyzes a single framework's GPU trace through 4 automated steps:
 
-#### Configuration
+1. **High-level operations** — Reads framework source code to identify the sequence of logical operations in each transformer block type
+2. **GPU operations extraction** — Parses the trace file to extract all GPU kernel events with timestamps, streams, and launch parameters
+3. **Operation correlation** — Correlates every low-level GPU kernel to its high-level transformer block operation through source code analysis; selects the median block
+4. **Annotated trace generation** — Produces a Chrome trace JSON for Perfetto with every kernel labeled with its high-level operation, source code references, and call chain
 
-Analysis requires a JSON config file. See `auto_analyze/analyze_config_example.json`:
-
-```json
-{
-    "model": "nvidia/Kimi-K2.5-NVFP4",
-    "precision": "NVFP4",
-    "gpu_type": "B200",
-    "isl": 4,
-    "osl": 1024,
-    "batch_size": 1,
-    "claude_output_dir": "/path/to/output",
-    "target_framework": "vllm",
-    "frameworks": [
-        {
-            "name": "vllm",
-            "source_code": "/path/to/vllm",
-            "test_dir": "/path/to/test_dir/vllm",
-            "gpu_ops_filter": ""
-        },
-        {
-            "name": "sglang",
-            "source_code": "/path/to/sglang",
-            "test_dir": "/path/to/test_dir/sgl",
-            "gpu_ops_filter": ""
-        }
-    ]
-}
-```
-
-| Field | Description |
-|-------|-------------|
-| `model` | Model identifier (e.g., `nvidia/DeepSeek-R1-NVFP4`) |
-| `precision` | Quantization precision (`FP8`, `NVFP4`, etc.) |
-| `gpu_type` | GPU hardware (`B200`, `H200`, etc.) |
-| `isl` | Input sequence length |
-| `osl` | Output sequence length |
-| `batch_size` | Batch size / concurrency |
-| `claude_output_dir` | Directory where Claude writes analysis results |
-| `target_framework` | The framework to optimize (e.g., `vllm`) |
-| `frameworks[].name` | Framework identifier |
-| `frameworks[].source_code` | Path to framework source code repository |
-| `frameworks[].test_dir` | Path to profiling results (contains `trace-*.sqlite`, `bench-*.json`, `run-log-*.txt`) |
-| `frameworks[].gpu_ops_filter` | Glob pattern to exclude GPU operations from analysis |
-
-#### Step 1: Analyze (`run_analyze_core.sh <config.json>`)
-
-For each framework, Claude executes four sequential prompts:
-
-1. **Transformer Block High-Level Ops** -- Inspects framework source code to extract the sequence of high-level operations in a transformer block
-2. **GPU Ops Extraction** -- Reads the NSYS SQLite trace to extract GPU operation sequences (GPU 0 only, up to 2000 ops)
-3. **GPU Ops to Transformer Blocks** -- Maps low-level GPU operations to transformer blocks using the high-level operation sequence
-4. **Median Block Selection** -- Selects the median wall-time transformer block as the representative sample
-
-Then two cross-framework prompts run:
-
-5. **Compare Median Blocks** -- Operation-by-operation performance comparison across frameworks
-6. **Generate Plan** -- Ranked improvement plan for the target framework
-
-**Output files** (written to `claude_output_dir`):
+**Output files:**
 
 | File | Description |
 |------|-------------|
-| `{fw}_transformer_block_high_level_ops.txt` | High-level operation sequence per framework |
-| `{fw}_gpu_ops.txt` | Raw GPU operation sequence from trace |
-| `{fw}_gpu_ops_to_blocks.txt` | GPU ops mapped to transformer blocks |
-| `{fw}_median_block.txt` | Representative median transformer block |
-| `{fw1}_{fw2}__perf_compare_blocks.txt` | Operation-by-operation comparison |
-| `{fw1}_{fw2}__plan.txt` | Ranked improvement plan for target framework |
+| `single_trace_transformer_block.json` | Annotated Chrome trace — open in [Perfetto](https://ui.perfetto.dev) |
+| `single_trace_transformer_block.txt` | Human-readable annotated trace summary |
+| `transformer_block_high_level_ops.txt` | High-level operation sequence from source code |
+| `gpu_ops.txt` | Extracted GPU operations from trace |
+| `gpu_ops_to_blocks.txt` | Full correlation of GPU ops to transformer blocks |
+| `median_block.txt` | Selected median transformer block |
 
-#### Step 2: Summary PDF (`run_analyze_summary_pdf.sh <config.json>`)
+Optional single-trace performance analysis (enabled with `--enable-single-trace-perf-analysis`) adds bottleneck identification and improvement proposals.
 
-Generates a professional PDF report (`cmp_and_plan_summary.pdf`) containing:
+### Cross-Trace Analysis (`run_cross_trace.py`)
 
-- Executive summary with impact badges (HIGH/MEDIUM/LOW)
-- Detailed improvement plans per issue with syntax-highlighted code snippets
-- Performance impact tables with color-coded deltas
-- Appendix with complete operation-by-operation comparison
-- Source code references grouped by framework
+Compares two or more single-trace results. Automatically detects the analysis mode:
+- **Cross-commit** — same framework, different commits (e.g., vLLM v0.16.0 vs main)
+- **Cross-framework** — different frameworks, same model (e.g., vLLM vs SGLang)
 
-#### Step 3: Combined Trace (`run_analyze_combined_trace.sh <config.json>`)
+The pipeline runs 2-3 steps:
 
-Generates a Chrome trace JSON file (`trace_combined_transformer_blocks.json`) that can be viewed in [Perfetto](https://ui.perfetto.dev/):
+1. **Block matching** — Matches operations across median transformer blocks one-by-one
+2. **Performance comparison** — Analyzes all differences (positive and negative) with root cause analysis
+3. **Improvement plan** *(optional, `make_improvement_plan: true`)* — Generates ranked improvement proposals with step-by-step coding guides
 
-- Side-by-side timeline of median transformer blocks from each framework
-- CUDA streams shown as separate lanes with overlap handling
-- Each operation annotated with high-level context, source code references, and improvement plan details
+**Output files:**
 
-#### Step 4: Create JIRA Tasks (`run_analyze_create_jiras.sh <config.json>`)
+| File | Description |
+|------|-------------|
+| `cross_matching_blocks.txt` | Operation-by-operation matching across traces |
+| `cross_compare_blocks.txt` | Performance comparison with root causes and code references |
+| `cross_improvement_plan.txt` | *(optional)* Improvement plan with coding guides |
 
-Creates JIRA tasks from the improvement plan:
+### Additional Tools
 
-- One master task under the configured epic
-- Sub-tasks for each individual improvement, with step-by-step implementation guides and code snippets
+| Script | Description |
+|--------|-------------|
+| `run_chrome_trace.py` | Generate Chrome trace JSON for Perfetto (single or cross mode) |
+| `run_summary_pdf.py` | Generate PDF report from analysis results |
+| `run_jiras.py` | Create JIRA tasks from improvement plans |
 
-#### Running All Steps
+## Config Helper Scripts
 
-To run the full analysis pipeline across all test cases:
+### `create_single_trace_config.py`
 
-```bash
-./run_all.sh config_deepseek_r1_nvfp4.sh
-```
-
-The pipeline config (`config_deepseek_r1_nvfp4.sh`) defines:
-
-```bash
-test_name="deepseek_r1_nvfp4"
-output_dir="./auto_analyze/results/results_analyze_${test_name}"
-```
-
-`run_all.sh` iterates over all `analyze_*.json` files in the output directory and runs all 4 steps for each.
-
-### Phase 3: Code Generation (`auto_code_gen/`)
-
-Uses Claude to automatically port optimizations from the faster framework to the slower one.
-
-The pipeline consists of iterative generate-review-fix cycles:
-
-1. **Code Trace** -- Analyze call chains for decode, prefill, and mixed execution modes in both frameworks
-2. **Code Port Plan** -- Generate a multi-step porting plan (4 review iterations)
-3. **Test Plan** -- Generate unit, integration, and performance tests
-4. **Code Generation** -- Implement the code patch following the porting plan
-5. **Code Review** -- Review and fix generated code (3 review iterations)
-6. **Issue Investigation** -- Deep-dive into runtime issues with root cause analysis and fixes
+Generates a single-trace config JSON from command-line parameters. Automatically infers framework name and run command from the run log.
 
 ```bash
-./run_code_gen.sh
+python -m auto_analyze.create_single_trace_config --help
 ```
+
+Key parameters: `--model`, `--gpu-type`, `--trace-file`, `--run-log-file`, `--clean-source-code-path`, `--commit-id`, `--analyze-output-dir`, `--output-config-file`
+
+### `create_cross_trace_config.py`
+
+Generates a cross-trace config JSON from single-trace result directories. Validates that required output files exist.
+
+```bash
+python -m auto_analyze.create_cross_trace_config --help
+```
+
+Key parameters: `--trace-result-dir` (repeatable), `--target-trace-id`, `--analyze-output-dir`, `--output-config-file`, `--make-improvement-plan`
+
+## Examples and Guides
+
+Detailed guides with copy-pasteable commands are in `auto_analyze/examples/`:
+
+| Guide | Description |
+|-------|-------------|
+| [Single-Trace Analysis and Annotation Guide](auto_analyze/examples/single_trace_analysis_and_annotation_guide.md) | End-to-end walkthrough for analyzing a single trace and producing an annotated Perfetto trace |
+| [Cross-Commit Comparison Guide](auto_analyze/examples/cross_commit_comparison_guide.md) | End-to-end walkthrough for comparing two commits of the same framework |
+| [vLLM Trace Generation Example](auto_analyze/examples/vllm_generate_trace_example.md) | How to capture PyTorch profiling traces with vLLM |
+
+A complete worked example comparing vLLM `main` vs `v0.16.0` on Kimi-K2.5-NVFP4 / B200 is at [`auto_analyze/examples/cross_commit_cmp_example_kimi/`](auto_analyze/examples/cross_commit_cmp_example_kimi/). It includes single-trace analysis results for both commits and the cross-commit comparison output.
+
+## Full Pipeline (`run_all.sh`)
+
+For automated profiling + analysis across multiple frameworks:
+
+```bash
+./run_all.sh <run_config>
+# Example: ./run_all.sh ./auto_profile/test_configs/run_deepseek_r1_nvfp4.json
+```
+
+This orchestrates:
+1. Run benchmarks and GPU profiling across frameworks
+2. Parse results and generate per-test-case analysis configs
+3. Run single-trace analysis for each framework
+4. Run cross-trace analysis comparing frameworks
+5. Generate PDF reports, Chrome traces, and JIRA tasks
+
+Use `run_all_scheduled.sh` to schedule execution at a future time with GPU availability checks.
 
 ## Claude Agent Integration
 
-All AI-driven steps use the Claude Agent SDK via `claude_utils.py`. Key configuration:
+All AI-driven steps use the Claude Agent SDK via `common/claude_utils.py`:
 
 | Parameter | Value |
 |-----------|-------|
 | Model | `claude-opus-4-6[1m]` (1M context) |
 | Allowed tools | `Read`, `Write`, `Bash` |
 | Permission mode | `acceptEdits` |
-| Max thinking tokens | 1,048,576 |
 | Thinking mode | Adaptive |
 | Effort | Max |
-| Max output tokens | 120,000 (set via `env.sh`) |
-
-Each step sends one or more prompts to Claude sequentially. Claude reads source code, analyzes traces, and writes results to the configured output directory.
 
 ## Logging
 
-All pipeline steps log to `logs/run_{step_name}.log`. Each run overwrites the previous log. Log output is also printed to stdout via the `Tee` mechanism.
+All pipeline steps log to `logs/run_{step_name}.log` with simultaneous stdout output.
 
 | Step | Log file |
 |------|----------|
-| Analyze | `logs/run_analyze.log` |
+| Single-trace analysis | `logs/run_single_trace.log` |
+| Cross-trace analysis | `logs/run_cross_trace.log` |
 | Summary PDF | `logs/run_summary_pdf.log` |
-| Combined Trace | `logs/run_combined_trace.log` |
-| Create JIRAs | `logs/run_create_jiras.log` |
-| Profile Summary | `logs/run_parse.log` |
-
-## Troubleshooting
-
-- Verify all paths in the analyze config JSON are correct and accessible
-- Ensure NSYS trace files are in SQLite format (`trace-*.sqlite`)
-- Ensure framework source code versions match those used to generate traces
-- Check `logs/` for detailed execution logs if a step fails
-- Review Claude's permissions if file access issues occur
+| Chrome trace | `logs/run_chrome_trace.log` |
+| JIRA creation | `logs/run_create_jiras.log` |
