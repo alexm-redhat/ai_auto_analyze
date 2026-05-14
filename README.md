@@ -11,6 +11,22 @@ Manual analysis of GPU profile traces is labor-intensive, particularly when corr
 3. **Profiling** *(optional)* — Run inference benchmarks with GPU profiling and auto-generate analysis configs
 4. **Code Generation** *(optional)* — Port optimizations from a faster framework to a slower one
 
+## Examples and Guides
+
+Detailed guides with copy-pasteable commands are in `auto_analyze/examples/`:
+
+| Guide | Description |
+|-------|-------------|
+| [Single-Trace Analysis and Annotation](https://github.com/neuralmagic/ai_auto_perf_analysis/blob/main/auto_analyze/examples/single_trace_analysis_and_annotation_guide.md) | Analyze a GPU trace and produce an annotated Perfetto visualization |
+| [Cross-Commit Comparison](https://github.com/neuralmagic/ai_auto_perf_analysis/blob/main/auto_analyze/examples/cross_commit_comparison_guide.md) | Compare two commits of the same framework |
+| [Cross-Framework Comparison](https://github.com/neuralmagic/ai_auto_perf_analysis/blob/main/auto_analyze/examples/cross_framework_comparison_guide.md) | Compare different frameworks (e.g., vLLM vs SGLang) |
+| [vLLM Trace Generation](https://github.com/neuralmagic/ai_auto_perf_analysis/blob/main/auto_analyze/examples/vllm_generate_trace_example.md) | How to capture PyTorch profiling traces with vLLM |
+
+Worked examples with full analysis results:
+
+- [Cross-commit example (Kimi-K2.5)](https://github.com/neuralmagic/ai_auto_perf_analysis/tree/main/auto_analyze/examples/cross_commit_cmp_example_kimi) — vLLM `main` vs `v0.16.0` on 8xB200, showing a 21.3% improvement from specialized CUDA kernels
+- [Cross-framework example (Kimi-K2.5)](https://github.com/neuralmagic/ai_auto_perf_analysis/tree/main/auto_analyze/examples/cross_framework_cmp_example_kimi) — vLLM vs SGLang on 8xB200, showing an 8.6% gap driven by MoE dual-stream design differences
+
 ## Project Structure
 
 ```
@@ -183,19 +199,6 @@ python -m auto_analyze.create_cross_trace_config --help
 ```
 
 Key parameters: `--trace-result-dir` (repeatable), `--target-trace-id`, `--analyze-output-dir`, `--output-config-file`, `--make-improvement-plan`
-
-## Examples and Guides
-
-Detailed guides with copy-pasteable commands are in `auto_analyze/examples/`:
-
-| Guide | Description |
-|-------|-------------|
-| [Single-Trace Analysis and Annotation Guide](auto_analyze/examples/single_trace_analysis_and_annotation_guide.md) | End-to-end walkthrough for analyzing a single trace and producing an annotated Perfetto trace |
-| [Cross-Commit Comparison Guide](auto_analyze/examples/cross_commit_comparison_guide.md) | End-to-end walkthrough for comparing two commits of the same framework |
-| [Cross-Framework Comparison Guide](auto_analyze/examples/cross_framework_comparison_guide.md) | End-to-end walkthrough for comparing different frameworks (e.g., vLLM vs SGLang) |
-| [vLLM Trace Generation Example](auto_analyze/examples/vllm_generate_trace_example.md) | How to capture PyTorch profiling traces with vLLM |
-
-A complete worked example comparing vLLM `main` vs `v0.16.0` on Kimi-K2.5-NVFP4 / B200 is at [`auto_analyze/examples/cross_commit_cmp_example_kimi/`](auto_analyze/examples/cross_commit_cmp_example_kimi/). It includes single-trace analysis results for both commits and the cross-commit comparison output.
 
 ## Full Pipeline (`run_all.sh`)
 
