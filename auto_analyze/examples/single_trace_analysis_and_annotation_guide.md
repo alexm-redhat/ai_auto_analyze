@@ -78,11 +78,11 @@ it fits in the transformer block. For example:
 > (kv_c=[B,512], k_pe=[B,64]), RMSNorm(512) on kv_c, Q reshape, k_pe unsqueeze,
 > and YaRN-scaled RoPE application. All from mla.py:149-159.
 
-The single-trace analysis is also the foundation for **cross-commit comparison**,
+The single-trace analysis is also the foundation for **cross-trace comparison**,
 where two single-trace results are compared to identify kernel-level performance
-differences between framework versions. See
-[Cross-Commit Performance Comparison](cross_commit_comparison_guide.md) for the
-next step after completing single-trace analysis.
+differences. See:
+- [Cross-Commit Performance Comparison](cross_commit_comparison_guide.md) — compare different versions of the same framework
+- [Cross-Framework Performance Comparison](cross_framework_comparison_guide.md) — compare different frameworks running the same model
 
 ## End-to-End Walkthrough
 
@@ -244,11 +244,10 @@ python -m auto_analyze.create_single_trace_config \
 This adds a `perf_analysis_single_trace.txt` output with bottleneck identification,
 improvement proposals with code snippets, and impact estimates.
 
-## Next Step: Cross-Commit Comparison
+## Next Step: Cross-Trace Comparison
 
-Once you have single-trace analysis results for two commits of the same framework,
-you can compare them to identify kernel-level performance differences — which
-operations improved and which regressed between versions.
+Once you have single-trace analysis results for two traces, you can compare them
+to identify kernel-level performance differences:
 
-See [Cross-Commit Performance Comparison](cross_commit_comparison_guide.md) for
-the full walkthrough.
+- **Same framework, different commits** — See [Cross-Commit Performance Comparison](cross_commit_comparison_guide.md)
+- **Different frameworks, same model** — See [Cross-Framework Performance Comparison](cross_framework_comparison_guide.md)

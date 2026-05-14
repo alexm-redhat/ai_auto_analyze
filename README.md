@@ -192,6 +192,7 @@ Detailed guides with copy-pasteable commands are in `auto_analyze/examples/`:
 |-------|-------------|
 | [Single-Trace Analysis and Annotation Guide](auto_analyze/examples/single_trace_analysis_and_annotation_guide.md) | End-to-end walkthrough for analyzing a single trace and producing an annotated Perfetto trace |
 | [Cross-Commit Comparison Guide](auto_analyze/examples/cross_commit_comparison_guide.md) | End-to-end walkthrough for comparing two commits of the same framework |
+| [Cross-Framework Comparison Guide](auto_analyze/examples/cross_framework_comparison_guide.md) | End-to-end walkthrough for comparing different frameworks (e.g., vLLM vs SGLang) |
 | [vLLM Trace Generation Example](auto_analyze/examples/vllm_generate_trace_example.md) | How to capture PyTorch profiling traces with vLLM |
 
 A complete worked example comparing vLLM `main` vs `v0.16.0` on Kimi-K2.5-NVFP4 / B200 is at [`auto_analyze/examples/cross_commit_cmp_example_kimi/`](auto_analyze/examples/cross_commit_cmp_example_kimi/). It includes single-trace analysis results for both commits and the cross-commit comparison output.

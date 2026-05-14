@@ -121,6 +121,26 @@ Do the following:
         - Provide source code, pull-requests (PRs), or specific commit references and explanations that are responsible for this difference.
     - Make sure the summary is clear, concise and professional and it fully explains the differences between the blocks.
 
+CRITICAL REVIEW — before writing the output, perform a thorough review of every performance difference found:
+- For each difference, re-verify the root cause by re-reading the relevant source code sections in both traces. Ensure the explanation is grounded in what the code actually does, not assumptions.
+- Cross-check timing deltas against the matched operations in [matching_file] — verify that the numbers are consistent and sum correctly.
+- For each code snippet or source reference cited, confirm it exists and is relevant to the claimed root cause.
+- Verify that no performance difference was missed — re-scan the matched operations for any delta that was overlooked.
+- If any difference cannot be fully explained with concrete source code evidence, flag it explicitly rather than speculating.
+- Fix any inaccuracies found during the review before proceeding.
+
+SECOND REVIEW — after fixing issues from the first review, perform one more pass:
+- Re-read the complete comparison end-to-end and verify it tells a coherent, consistent story.
+- Ensure the executive summary accurately reflects the detailed findings — no contradictions.
+- Verify that all timing percentages and impact numbers are arithmetically correct and consistent with each other.
+- Confirm the sort order is correct: negatives from worst to least, positives from most to least.
+- Fix any issues found before proceeding.
+
+THIRD REVIEW — final quality check:
+- For each performance difference, verify that the explanation would be clear and actionable to a developer who has not seen the traces before.
+- Ensure every claim about "why" a kernel is faster or slower has a specific source code reference — not just a file name, but the relevant line range and what the code does.
+- Verify that the total net delta (sum of all individual deltas) is consistent with the overall wall-time difference between the two blocks.
+
 Dump the comparison summary to [output_file].
 """
 

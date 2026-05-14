@@ -154,7 +154,7 @@ and the improvement plan for the target framework."""
 
 1. COVER BLOCK
    - Title: "Cross-Framework Performance Comparison Report"
-   - Subtitle: model, GPU, execution parameters, frameworks compared (from [run_params_file])
+   - Subtitle: model, GPU, execution parameters, frameworks compared (from [run_params_file]; make sure to include commit id date as well)
    - Date line: "Generated: [today's date]"
    - Horizontal rule separator.
 
