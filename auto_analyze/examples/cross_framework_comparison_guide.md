@@ -67,8 +67,7 @@ that SGLang does not require:
 - **Routing bias copy** (+2.0 us) — vLLM converts `e_score_correction_bias` to
   bfloat16 via `.to(torch.bfloat16)` on every forward pass, launching a copy kernel.
   SGLang handles the routing bias dtype internally within the routing kernel. This
-  could be fixed by pre-converting the bias at model load time (see
-  [FlashInfer issue #2909](https://github.com/flashinfer-ai/flashinfer/issues/2909)).
+  could be fixed by pre-converting the bias at model load time.
 
 The analysis also generated an improvement plan showing that if vLLM adopted
 SGLang's shared expert TP policy and eliminated the overhead kernels, it would be
