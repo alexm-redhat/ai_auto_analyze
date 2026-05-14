@@ -55,6 +55,21 @@ SGLang achieves this by setting the shared expert to `tp_size=1` (no TP sharding
 making its GEMMs 8x larger per GPU and long enough to serve as a credible
 main-stream workload that hides the routing-heavy routed MoE on the alternate stream.
 
+**Details on the second largest difference — MoE overhead kernels (+4.4 us):**
+
+vLLM launches two overhead kernels on its main stream before MoE expert computation
+that SGLang does not require:
+
+- **Workspace zero-fill** (+2.4 us) — vLLM's FlashInfer integration triggers an
+  internal zero-fill of the MoE output accumulation buffer before expert computation.
+  SGLang avoids this by using `torch.empty()` (no zeroing) and relying on the kernel
+  to fully write all output elements.
+- **Routing bias copy** (+2.0 us) — vLLM converts `e_score_correction_bias` to
+  bfloat16 via `.to(torch.bfloat16)` on every forward pass, launching a copy kernel.
+  SGLang handles the routing bias dtype internally within the routing kernel. This
+  could be fixed by pre-converting the bias at model load time (see
+  [FlashInfer issue #2909](https://github.com/flashinfer-ai/flashinfer/issues/2909)).
+
 The analysis also generated an improvement plan showing that if vLLM adopted
 SGLang's shared expert TP policy and eliminated the overhead kernels, it would be
 ~6.5% *faster* than SGLang (thanks to its AllReduce+RMSNorm fusion advantage).
