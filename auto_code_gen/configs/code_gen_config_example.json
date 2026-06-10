@@ -9,8 +9,12 @@
     "disallowed_modules": ["sglang", "sgl_kernel", "sgl*"],
     "use_smaller_model_for_runtime": false,
     "disable_new_feature_for_runtime": false,
+    "additional_benchmark_configs": [],
     "code_port_plan_skip_review": false,
     "test_plan_skip_review": false,
     "code_gen_skip_review": false,
+    "generate_pr_commands": false,
+    "pr_base_branch": "main",
+    "pr_remote": "origin",
     "thinking-mode": "deep"
 }

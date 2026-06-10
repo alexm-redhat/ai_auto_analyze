@@ -1,3 +1,32 @@
+"""Run runtime iterations for a specific model configuration.
+
+Standalone entry point for runtime iterations after the code gen pipeline
+has produced a patch. By default, runs with the original benchmarked model.
+Can also run with a smaller auto-detected model, or a specific model from
+additional_benchmark_configs.
+
+Each model's results (logs, success file) go into a model-specific
+subdirectory (runtime_<model_slug>/) inside output_dir. Patches are
+shared across models in the main output_dir.
+
+Usage:
+
+    # Default: run with original model
+    python -m auto_code_gen.run_runtime_iters --config <config.json>
+
+    # Run with auto-detected smaller model
+    python -m auto_code_gen.run_runtime_iters --config <config.json> --use-smaller-model
+
+    # Run with a specific additional model by index (0-based)
+    python -m auto_code_gen.run_runtime_iters --config <config.json> --model-index 0
+
+    # Run ALL models (original + smaller if enabled + all additional)
+    python -m auto_code_gen.run_runtime_iters --config <config.json> --all-models
+
+    # Resume from last incomplete iteration
+    python -m auto_code_gen.run_runtime_iters --config <config.json> --resume
+"""
+
 import os as _os
 import sys as _sys
 
@@ -18,21 +47,15 @@ from auto_code_gen.code_gen_configs import CodeGenConfig
 from auto_code_gen.use_cases.llm_framework import LLMFrameworkUseCase
 
 from auto_code_gen.code_gen_prompts import (
-    gen_IterationHistorySummaryPrompt,
-    gen_FindSmallerModelPrompt,
     code_trace_filename,
-    CODE_GEN_FILE_PREFIX,
-    RUNTIME_FILE_PREFIX,
     RUNTIME_SUCCESS_FILE,
-    RUNTIME_LOGS_DIR,
-    RUNTIME_SMALLER_MODEL_FILE,
+    RUNTIME_RESULTS_MANIFEST,
 )
 
 from auto_code_gen.run_code_gen import (
-    run_runtime_iterations,
     _find_latest_patch,
-    _find_latest_runtime_iteration,
     _check_runtime_success,
+    _make_model_runtime_dir,
     _format_duration,
     _format_tokens,
     _print_detailed_table,
@@ -43,7 +66,7 @@ from auto_code_gen.run_code_gen import (
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run runtime iterations (standalone mode). "
-        "This is used after run_code_gen.py has completed its code gen iterations."
+        "Runs after run_code_gen.py has produced a code patch."
     )
     parser.add_argument(
         "--config",
@@ -55,18 +78,120 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Resume from last incomplete runtime iteration.",
     )
+
+    model_group = parser.add_mutually_exclusive_group()
+    model_group.add_argument(
+        "--use-smaller-model",
+        action="store_true",
+        help="Run with an auto-detected smaller model instead of the original.",
+    )
+    model_group.add_argument(
+        "--model-index",
+        type=int,
+        default=None,
+        help="Run a specific additional model by index (0-based from additional_benchmark_configs).",
+    )
+    model_group.add_argument(
+        "--all-models",
+        action="store_true",
+        help="Run ALL models: original, smaller (if enabled), and all additional.",
+    )
     return parser.parse_args()
 
 
+def _build_model_list(args, config, use_case):
+    """Build the list of model configs to run based on CLI args."""
+    models = []
+
+    if args.all_models:
+        # Original model
+        models.append({
+            "model": config.model,
+            "label": "original",
+            "execution_command": config.target_run_command,
+            "smaller_model_file": None,
+            "disable_new_feature": config.disable_new_feature_for_runtime,
+        })
+        # Smaller model (if enabled in config)
+        if config.use_smaller_model_for_runtime:
+            models.append({
+                "model": "smaller",
+                "label": "smaller",
+                "execution_command": config.target_run_command,
+                "smaller_model_file": "__pending__",
+                "disable_new_feature": config.disable_new_feature_for_runtime,
+            })
+        # All additional models
+        for bench_cfg in config.additional_benchmark_configs:
+            model = bench_cfg.get("model", "")
+            num_gpus = bench_cfg.get("num_gpus", 8)
+            label = bench_cfg.get("label", model)
+            exec_cmd = bench_cfg.get("run_command", "")
+            if not exec_cmd:
+                exec_cmd = use_case._derive_run_command(
+                    config.target_run_command, model, num_gpus
+                )
+            models.append({
+                "model": model,
+                "label": label,
+                "execution_command": exec_cmd,
+                "smaller_model_file": None,
+                "disable_new_feature": config.disable_new_feature_for_runtime,
+            })
+
+    elif args.use_smaller_model:
+        models.append({
+            "model": "smaller",
+            "label": "smaller",
+            "execution_command": config.target_run_command,
+            "smaller_model_file": "__pending__",
+            "disable_new_feature": config.disable_new_feature_for_runtime,
+        })
+
+    elif args.model_index is not None:
+        idx = args.model_index
+        if idx < 0 or idx >= len(config.additional_benchmark_configs):
+            print("ERROR: model-index {} out of range (0-{})".format(
+                idx, len(config.additional_benchmark_configs) - 1
+            ))
+            sys.exit(1)
+        bench_cfg = config.additional_benchmark_configs[idx]
+        model = bench_cfg.get("model", "")
+        num_gpus = bench_cfg.get("num_gpus", 8)
+        label = bench_cfg.get("label", model)
+        exec_cmd = bench_cfg.get("run_command", "")
+        if not exec_cmd:
+            exec_cmd = use_case._derive_run_command(
+                config.target_run_command, model, num_gpus
+            )
+        models.append({
+            "model": model,
+            "label": label,
+            "execution_command": exec_cmd,
+            "smaller_model_file": None,
+            "disable_new_feature": config.disable_new_feature_for_runtime,
+        })
+
+    else:
+        # Default: original model
+        models.append({
+            "model": config.model,
+            "label": "original",
+            "execution_command": config.target_run_command,
+            "smaller_model_file": None,
+            "disable_new_feature": config.disable_new_feature_for_runtime,
+        })
+
+    return models
+
+
 def _find_code_trace_files(output_dir, code_gen_config):
-    """Find the framework code trace files from previous code gen runs."""
     source_fw = code_gen_config.source_framework
     target_fw = code_gen_config.target_framework
-
-    source_trace = os.path.join(output_dir, code_trace_filename(source_fw))
-    target_trace = os.path.join(output_dir, code_trace_filename(target_fw))
-
-    files = [source_trace, target_trace]
+    files = [
+        os.path.join(output_dir, code_trace_filename(source_fw)),
+        os.path.join(output_dir, code_trace_filename(target_fw)),
+    ]
     for f in files:
         if not os.path.isfile(f):
             raise FileNotFoundError(
@@ -77,9 +202,8 @@ def _find_code_trace_files(output_dir, code_gen_config):
 
 
 def _find_latest_plan_file(output_dir, prefix):
-    """Find the latest review file for a plan prefix (code_port_plan or test_plan)."""
-    import re
-    pattern = re.compile(r'^{}_review_V(\d+)\.txt$'.format(re.escape(prefix)))
+    import re as _re
+    pattern = _re.compile(r'^{}_review_V(\d+)\.txt$'.format(_re.escape(prefix)))
     latest = None
     latest_ver = 0
     for f in os.listdir(output_dir):
@@ -89,13 +213,23 @@ def _find_latest_plan_file(output_dir, prefix):
             if ver > latest_ver:
                 latest_ver = ver
                 latest = f
+    if latest is None:
+        pattern2 = _re.compile(r'^{}_V(\d+)\.txt$'.format(_re.escape(prefix)))
+        for f in os.listdir(output_dir):
+            m = pattern2.match(f)
+            if m:
+                ver = int(m.group(1))
+                if ver > latest_ver:
+                    latest_ver = ver
+                    latest = f
     return latest
 
 
-async def run_standalone_runtime_iterations(code_gen_config, claude_config, resume=False):
-    output_dir = code_gen_config.output_dir
+async def run_standalone_runtime_iterations(code_gen_config, claude_config,
+                                            resume=False, run_models=None):
     use_case = LLMFrameworkUseCase()
     context = use_case.create_context_str(claude_config, code_gen_config)
+    output_dir = code_gen_config.output_dir
 
     # Verify target branch
     print("Verifying target framework branch...")
@@ -105,108 +239,21 @@ async def run_standalone_runtime_iterations(code_gen_config, claude_config, resu
         print("  Please clean the repo and retry.")
         sys.exit(1)
 
-    # Find code trace files
+    # Find code trace files from previous pipeline run
     code_trace_files = _find_code_trace_files(output_dir, code_gen_config)
 
-    # Find the latest code port plan and test plan
-    code_port_plan_file = _find_latest_plan_file(output_dir, "code_port_plan")
-    if code_port_plan_file is None:
-        print("ERROR: No code port plan found in {}".format(output_dir))
-        print("  Run the code generation pipeline first.")
-        sys.exit(1)
+    # Find latest plan files
+    code_port_plan_file = _find_latest_plan_file(output_dir, "code_port_plan") or ""
+    test_plan_file = _find_latest_plan_file(output_dir, "test_plan") or ""
 
-    test_plan_file = _find_latest_plan_file(output_dir, "test_plan")
-    if test_plan_file is None:
-        print("ERROR: No test plan found in {}".format(output_dir))
-        print("  Run the code generation pipeline first.")
-        sys.exit(1)
-
-    # Find the latest patch
-    latest_patch = _find_latest_patch(output_dir)
-    if latest_patch is None:
-        print("ERROR: No code patch found in {}".format(output_dir))
-        print("  Run the code generation pipeline first.")
-        sys.exit(1)
-
-    # Check if already succeeded
-    if _check_runtime_success(output_dir):
-        print("Runtime iterations already succeeded (found {})".format(
-            RUNTIME_SUCCESS_FILE
-        ))
-        return [], []
-
-    # Determine starting iteration
-    last_runtime_iter = _find_latest_runtime_iteration(output_dir)
-    start_iteration = last_runtime_iter + 1
-
-    print("\n" + "=" * 80)
-    print("STANDALONE RUNTIME ITERATIONS")
-    print("=" * 80)
-    print("  Output directory: {}".format(output_dir))
-    print("  Latest patch: {}".format(latest_patch))
-    print("  Code port plan: {}".format(code_port_plan_file))
-    print("  Test plan: {}".format(test_plan_file))
-    print("  Starting iteration: {}".format(start_iteration))
-    print("  Execution command: {}".format(
-        code_gen_config.target_run_command
-    ))
-    print("=" * 80 + "\n")
-
-    all_step_timings = []
-
-    # Phase 0: Generate iteration history summary (always runs to capture latest state)
-    print("Generating iteration history summary...")
-    history_prompt = gen_IterationHistorySummaryPrompt(
-        context=context,
-        code_gen_output_dir=output_dir,
+    phase_results, all_step_timings = await use_case.run_runtime_iterations(
+        context, code_gen_config, claude_config,
+        code_trace_files=code_trace_files,
+        code_port_plan_file=code_port_plan_file,
+        test_plan_file=test_plan_file,
+        resume=resume,
+        run_models=run_models,
     )
-    steps_history = [
-        PipelineStep(
-            name="iteration_history_summary",
-            prompt=history_prompt.prompt(),
-            output_files=[history_prompt.output_file],
-        ),
-    ]
-
-    timings = await claude_run(claude_config, steps_history)
-    all_step_timings.extend(timings)
-
-    smaller_model_file = None
-    if code_gen_config.use_smaller_model_for_runtime:
-        smaller_model_path = os.path.join(output_dir, RUNTIME_SMALLER_MODEL_FILE)
-        if os.path.isfile(smaller_model_path) and os.path.getsize(smaller_model_path) > 0:
-            print("Reusing existing smaller model selection ({})".format(
-                RUNTIME_SMALLER_MODEL_FILE
-            ))
-            smaller_model_file = RUNTIME_SMALLER_MODEL_FILE
-        else:
-            print("Finding smaller model for runtime iterations...")
-            smaller_prompt = gen_FindSmallerModelPrompt(
-                context=context,
-                code_trace_files=code_trace_files,
-                code_port_plan_file=code_port_plan_file,
-            )
-            steps_smaller = [
-                PipelineStep(
-                    name="find_smaller_model",
-                    prompt=smaller_prompt.prompt(),
-                    output_files=[smaller_prompt.output_file],
-                ),
-            ]
-            timings = await claude_run(claude_config, steps_smaller)
-            all_step_timings.extend(timings)
-            smaller_model_file = smaller_prompt.output_file
-
-    # Run the runtime iteration loop
-    phase_results, runtime_timings = await run_runtime_iterations(
-        context, code_trace_files, code_gen_config, claude_config,
-        code_port_plan_file, test_plan_file,
-        history_prompt.output_file,
-        resume=resume, start_iteration=start_iteration,
-        smaller_model_file=smaller_model_file,
-        disable_new_feature=code_gen_config.disable_new_feature_for_runtime,
-    )
-    all_step_timings.extend(runtime_timings)
 
     return phase_results, all_step_timings
 
@@ -216,15 +263,29 @@ if __name__ == "__main__":
 
     code_gen_config = CodeGenConfig.from_json(args.config)
     claude_config = code_gen_config.make_claude_config()
+    use_case = LLMFrameworkUseCase()
 
     setup_logging("runtime_iters")
 
     os.makedirs(code_gen_config.output_dir, exist_ok=True)
 
+    run_models = _build_model_list(args, code_gen_config, use_case)
+
+    print("\n" + "=" * 80)
+    print("STANDALONE RUNTIME ITERATIONS")
+    print("=" * 80)
+    print("  Output directory: {}".format(code_gen_config.output_dir))
+    print("  Models to run: {}".format(len(run_models)))
+    for m in run_models:
+        print("    - {} ({})".format(m["label"], m["model"]))
+    print("=" * 80 + "\n")
+
     start_time = time.time()
     phase_results, all_step_timings = asyncio.run(
         run_standalone_runtime_iterations(
-            code_gen_config, claude_config, resume=args.resume
+            code_gen_config, claude_config,
+            resume=args.resume,
+            run_models=run_models,
         )
     )
     total_duration = time.time() - start_time
@@ -234,14 +295,14 @@ if __name__ == "__main__":
     if phase_results:
         _print_phase_summary(phase_results, all_step_timings, total_duration)
 
-    if _check_runtime_success(code_gen_config.output_dir):
-        print("\nRUNTIME ITERATIONS COMPLETED SUCCESSFULLY")
-        success_file = os.path.join(
-            code_gen_config.output_dir, RUNTIME_SUCCESS_FILE
-        )
-        print("Results: {}".format(success_file))
-    else:
-        print("\nRUNTIME ITERATIONS DID NOT SUCCEED")
-        print("Check the logs and summaries in: {}".format(
-            code_gen_config.output_dir
-        ))
+    # Check results per model
+    for m in run_models:
+        model_dir = _make_model_runtime_dir(code_gen_config.output_dir, m["label"])
+        if _check_runtime_success(model_dir):
+            print("\n  {} — SUCCEEDED".format(m["label"]))
+        else:
+            print("\n  {} — DID NOT SUCCEED".format(m["label"]))
+
+    manifest_path = os.path.join(code_gen_config.output_dir, RUNTIME_RESULTS_MANIFEST)
+    if os.path.isfile(manifest_path):
+        print("\nResults manifest: {}".format(manifest_path))

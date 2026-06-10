@@ -78,6 +78,17 @@ class UseCase(ABC):
         """
         ...
 
+    async def run_generate_pr_commands(
+        self, context: str, config, claude_config: ClaudeConfig,
+        descs_only: bool = False,
+    ) -> tuple[list[dict], list[dict]]:
+        """Phase 6: generate PR description files and command scripts.
+
+        When descs_only=True, only regenerate commit_desc.txt and pr_desc.txt
+        without regenerating the step scripts. Default: skip.
+        """
+        return [], []
+
     @abstractmethod
     def clear_target_cmd(self, config) -> dict:
         """Command dict to clear target repo before steps that modify it."""

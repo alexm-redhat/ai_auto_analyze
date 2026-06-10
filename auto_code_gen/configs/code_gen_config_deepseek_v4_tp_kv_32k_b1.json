@@ -7,7 +7,14 @@
     "num_test_plan_iterations": 4,
     "num_code_gen_iterations": 4,
     "disallowed_modules": ["sglang", "sgl_kernel", "sgl*"],
-    "use_smaller_model_for_runtime": true,
+    "use_smaller_model_for_runtime": false,
     "disable_new_feature_for_runtime": false,
+    "additional_benchmark_configs": [
+        {
+            "model": "deepseek-ai/DeepSeek-V4-Flash",
+            "num_gpus": 2,
+            "label": "DeepSeek-V4-Flash (2xH200)"
+        }
+    ],
     "thinking-mode": "deep"
 }

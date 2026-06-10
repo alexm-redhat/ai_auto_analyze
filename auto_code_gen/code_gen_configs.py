@@ -51,6 +51,10 @@ class PipelineConfig:
     code_port_plan_skip_review: bool = False
     test_plan_skip_review: bool = False
     code_gen_skip_review: bool = False
+    generate_pr_commands: bool = False
+    pr_base_branch: str = "main"
+    pr_remote: str = "origin"
+    config_json_path: str = ""
 
 
 @dataclass
@@ -62,6 +66,7 @@ class CodeGenConfig(PipelineConfig):
     gpu_wait_timeout_minutes: int = 30
     use_smaller_model_for_runtime: bool = False
     disable_new_feature_for_runtime: bool = False
+    additional_benchmark_configs: list[dict] = field(default_factory=list)
 
     # --- Auto-inferred fields ---
     model: str = ""
@@ -141,6 +146,10 @@ class CodeGenConfig(PipelineConfig):
         if not isinstance(disable_new_feature_for_runtime, bool):
             errors.append('"disable_new_feature_for_runtime" must be a boolean.')
 
+        additional_benchmark_configs = data.get("additional_benchmark_configs", [])
+        if not isinstance(additional_benchmark_configs, list):
+            errors.append('"additional_benchmark_configs" must be a list.')
+
         thinking_mode = data.get("thinking-mode", "deep")
         if thinking_mode not in ("normal", "deep"):
             errors.append('"thinking-mode" must be "normal" or "deep".')
@@ -148,6 +157,9 @@ class CodeGenConfig(PipelineConfig):
         code_port_plan_skip_review = data.get("code_port_plan_skip_review", False)
         test_plan_skip_review = data.get("test_plan_skip_review", False)
         code_gen_skip_review = data.get("code_gen_skip_review", False)
+        generate_pr_commands = data.get("generate_pr_commands", False)
+        pr_base_branch = data.get("pr_base_branch", "main")
+        pr_remote = data.get("pr_remote", "origin")
 
         if errors:
             raise ValueError(
@@ -168,14 +180,19 @@ class CodeGenConfig(PipelineConfig):
             gpu_wait_timeout_minutes=int(gpu_wait_timeout_minutes),
             use_smaller_model_for_runtime=use_smaller_model_for_runtime,
             disable_new_feature_for_runtime=disable_new_feature_for_runtime,
+            additional_benchmark_configs=additional_benchmark_configs,
             plan_step=improvement_id,
             disallowed_modules=disallowed_modules,
             thinking_mode=thinking_mode,
             code_port_plan_skip_review=code_port_plan_skip_review,
             test_plan_skip_review=test_plan_skip_review,
             code_gen_skip_review=code_gen_skip_review,
+            generate_pr_commands=generate_pr_commands,
+            pr_base_branch=pr_base_branch,
+            pr_remote=pr_remote,
         )
         config._load_from_cross_trace()
+        config.config_json_path = os.path.abspath(path)
         return config
 
     def _load_from_cross_trace(self):
@@ -503,6 +520,9 @@ class BugFixConfig(PipelineConfig):
         code_port_plan_skip_review = data.get("code_port_plan_skip_review", False)
         test_plan_skip_review = data.get("test_plan_skip_review", False)
         code_gen_skip_review = data.get("code_gen_skip_review", False)
+        generate_pr_commands = data.get("generate_pr_commands", False)
+        pr_base_branch = data.get("pr_base_branch", "main")
+        pr_remote = data.get("pr_remote", "origin")
 
         if thinking_mode not in ("normal", "deep"):
             errors.append('"thinking-mode" must be "normal" or "deep".')
@@ -534,6 +554,10 @@ class BugFixConfig(PipelineConfig):
             code_port_plan_skip_review=code_port_plan_skip_review,
             test_plan_skip_review=test_plan_skip_review,
             code_gen_skip_review=code_gen_skip_review,
+            generate_pr_commands=generate_pr_commands,
+            pr_base_branch=pr_base_branch,
+            pr_remote=pr_remote,
+            config_json_path=os.path.abspath(path),
         )
 
     # Reuse the same _MODE_PARAMS pattern from CodeGenConfig

@@ -484,6 +484,8 @@ def gen_ReviewCodeGenPrompt(
 
 RUNTIME_FILE_PREFIX = "code_gen_runtime"
 RUNTIME_SUCCESS_FILE = "runtime_success_result.txt"
+RUNTIME_RESULTS_MANIFEST = "runtime_results_manifest.json"
+PR_COMMANDS_DIR = "pr-generate"
 RUNTIME_LOGS_DIR = "runtime_logs"
 RUNTIME_SMALLER_MODEL_FILE = "runtime_smaller_model.txt"
 
@@ -615,21 +617,28 @@ The goal of this task is to apply the code patch <patch_file> to the "target" fr
 
 Follow these steps precisely:
 
-Step 1: Verify Clean Repository State
+Step 1: Check if patch is already committed (post-rebase case)
+- Run `git -C <target_source_code_dir> log --oneline -1` to see the latest commit.
+- Run `git -C <target_source_code_dir> diff --stat HEAD~1..HEAD` to see what the latest commit changed.
+- Check if the patch file <output_dir>/{patch_file} content matches what's already committed:
+    - Compare `git -C <target_source_code_dir> diff HEAD~1..HEAD` against the patch file content
+    - If they match (same files modified, same changes), the patch is already committed (e.g., after a rebase). Print: "Patch already committed in HEAD. Skipping apply, proceeding to compile."
+    - Skip Step 2 entirely and proceed to Step 3.
+- If the patch is NOT already committed, proceed to Step 2.
+
+Step 2: Verify Clean Repository State and Apply Patch
 - Run `git -C <target_source_code_dir> status --porcelain` to check for any modifications or uncommitted changes.
 - If the repository has ANY modifications (staged or unstaged tracked files):
     - Print a clear WARNING message: "WARNING: Repository at <target_source_code_dir> is not clean. Cannot apply patch."
     - List all dirty files.
     - Write "REPO_NOT_CLEAN" to <output_dir>/{output_status_file}
     - STOP immediately. Do NOT proceed to the next steps.
-- If the repository is clean, proceed to Step 2.
-
-Step 2: Apply the Code Patch
-- Apply the patch to <target_source_code_dir> using: `cd <target_source_code_dir> && git apply <output_dir>/{patch_file}`
-- If `git apply` fails, try with: `cd <target_source_code_dir> && git apply --3way <output_dir>/{patch_file}`
-- If that also fails, try with: `cd <target_source_code_dir> && patch -p1 < <output_dir>/{patch_file}`
-- Verify the patch was applied correctly by checking `git -C <target_source_code_dir> diff --stat`
-- IMPORTANT: ALL code modifications MUST be exclusively inside <target_source_code_dir>. Do NOT modify files outside of it.
+- If the repository is clean, apply the patch:
+    - Apply the patch to <target_source_code_dir> using: `cd <target_source_code_dir> && git apply <output_dir>/{patch_file}`
+    - If `git apply` fails, try with: `cd <target_source_code_dir> && git apply --3way <output_dir>/{patch_file}`
+    - If that also fails, try with: `cd <target_source_code_dir> && patch -p1 < <output_dir>/{patch_file}`
+    - Verify the patch was applied correctly by checking `git -C <target_source_code_dir> diff --stat`
+    - IMPORTANT: ALL code modifications MUST be exclusively inside <target_source_code_dir>. Do NOT modify files outside of it.
 
 Step 3: Incremental Compilation
 - Run incremental compilation for the "target" framework in <target_source_code_dir>:
@@ -798,13 +807,13 @@ Step 4: Write Run Status
         if self.disable_new_feature:
             feature_toggle_env_var = (
                 "    - Read the latest code gen or runtime summary file in <output_dir> to find the "
-                "environment variable name that disables the new feature (e.g., VLLM_DISABLE_AUTO_PERF_PLAN_<plan_step>).\n"
+                "environment variable name that disables the new feature.\n"
                 "    - Set this environment variable to \"1\" in the command prefix to disable the new feature."
             )
             feature_verification_step = (
                 "Step 5: Verify Feature is DISABLED\n"
-                "- Search the combined log for the expected disabled message: "
-                "\"[AutoPerf] Plan step <plan_step>:\" followed by \"is DISABLED (env override)\".\n"
+                "- Search the combined log for the expected disabled message containing "
+                "\"is DISABLED (env override)\".\n"
                 "- If found, the feature was successfully disabled.\n"
                 "- If NOT found, print a WARNING that the feature disable mechanism may not be working."
             )
@@ -812,8 +821,8 @@ Step 4: Write Run Status
             feature_toggle_env_var = ""
             feature_verification_step = (
                 "Step 5: Verify Feature is ENABLED\n"
-                "- Search the combined log for the expected enabled message: "
-                "\"[AutoPerf] Plan step <plan_step>:\" followed by \"is ENABLED\".\n"
+                "- Search the combined log for the expected enabled message containing "
+                "\"is ENABLED\".\n"
                 "- If found, the new feature is confirmed active — good.\n"
                 "- If NOT found, print a WARNING that the new feature may not be running. "
                 "Write \"FEATURE_NOT_VERIFIED\" to {runtime_logs_dir}/runtime_run_status_V{iteration}.txt "
@@ -821,7 +830,7 @@ Step 4: Write Run Status
                 "\n"
                 "Step 6: Baseline Comparison Run (only if the patched run in Step 3 succeeded with exit code 0 AND Step 5 confirmed the feature is enabled)\n"
                 "- Read the latest code gen or runtime summary file in <output_dir> to find the environment variable "
-                "name that disables the new feature (e.g., VLLM_DISABLE_AUTO_PERF_PLAN_<plan_step>).\n"
+                "name that disables the new feature.\n"
                 "- Re-run the SAME adjusted command from Step 3, but with the disable env var set to \"1\" in the "
                 "command prefix. This runs the original code paths WITHOUT the new feature, to establish a baseline.\n"
                 "- Capture output to:\n"
@@ -830,7 +839,7 @@ Step 4: Write Run Status
                 "    - {runtime_logs_dir}/runtime_baseline_V{iteration}_combined.log\n"
                 "    - {runtime_logs_dir}/runtime_baseline_V{iteration}_exit_code.txt\n"
                 "  If --output-json is present, set it to {runtime_logs_dir}/runtime_baseline_bench_result_V{iteration}.json\n"
-                "- Verify the baseline run log contains the \"[AutoPerf]...is DISABLED (env override)\" message.\n"
+                "- Verify the baseline run log contains the \"is DISABLED (env override)\" message.\n"
                 "- The baseline run MUST succeed (exit code 0), since it runs the original unmodified code paths. "
                 "If it fails:\n"
                 "    - This indicates something is wrong with the patch's disable mechanism or the patch broke original code paths.\n"
@@ -950,7 +959,7 @@ Step 2: Determine Model and Parameters
 - Determine max_model_len: use the --max-model-len value from <execution_command>. If this value is very large and may cause OOM for lm_eval, reduce it to a reasonable value (e.g., 16384 or 32768) that fits in available VRAM while being sufficient for gsm8k 5-shot evaluation.
 
 Step 3: Run lm_eval with Feature ENABLED
-- Read the latest code gen or runtime summary file in <output_dir> to find the environment variable name that disables the new feature (e.g., VLLM_DISABLE_AUTO_PERF_PLAN_<plan_step>).
+- Read the latest code gen or runtime summary file in <output_dir> to find the environment variable name that disables the new feature.
 - Ensure this env var is NOT set (or unset it) so the new feature is active.
 - Construct and run the lm_eval command:
     ```
@@ -1071,6 +1080,7 @@ class InvestigateRuntimeOutputAndFixCodePrompt:
     output_patch_file: str
     output_summary_file: str
     success_result_file: str
+    results_output_dir: Optional[str]
     prompt_template: ClassVar[str] = """
 
 {context}
@@ -1159,7 +1169,8 @@ Step 3A: If SUCCEEDED (both benchmark AND lm_eval passed)
     - Any other relevant metrics
 - Also read the baseline performance comparison file from <runtime_logs_dir>/runtime_perf_comparison_V{iteration}.txt (if it exists). This contains side-by-side patched vs baseline results from the RunAndLog step.
 - Also read the lm_eval results from <lm_eval_result_file> in <runtime_logs_dir> (if it exists). This contains correctness scores for both feature enabled and disabled.
-- Write a comprehensive summary to <output_dir>/{success_result_file}:
+- Write a comprehensive summary to {results_output_dir}/{success_result_file}:
+    - Patch version: include the exact patch file name that was applied for this run ({patch_file}). This is critical for determining whether this success result is still current or outdated after a rebase or new iteration.
     - Performance results:
         - Patched run performance: throughput, TTFT, TPOT with units
         - Baseline run performance (from comparison file): throughput, TTFT, TPOT with units
@@ -1204,13 +1215,20 @@ Step 3B: If FAILED
     - Do NOT stop until full success on all patch-introduced tests + NEW tests from above.
 - Feature Toggle and Startup Verification:
     - Ensure the fixed patch preserves the feature toggle mechanism from the original code gen patch:
-        1. STARTUP LOG: A log message during framework startup that prints `[AutoPerf] Plan step <plan_step>: <description> is ENABLED` when the new feature is active.
-        2. ENVIRONMENT VARIABLE DISABLE SWITCH: The env var `VLLM_DISABLE_AUTO_PERF_PLAN_<plan_step>` that, when set to "1", disables the new feature and falls back to original code paths, printing `[AutoPerf] Plan step <plan_step>: <description> is DISABLED (env override)`.
+        1. STARTUP LOG: A log message during framework startup that prints `<description> is ENABLED` when the new feature is active.
+        2. ENVIRONMENT VARIABLE DISABLE SWITCH: A feature-descriptive env var (read its name from the code gen summary or the patch itself) that, when set to "1", disables the new feature and falls back to original code paths, printing `<description> is DISABLED (env override)`.
     - If these mechanisms are missing or broken in the current patch, add or fix them.
     - Do NOT remove or weaken these mechanisms during fixes.
-- Generate the fixed code patch:
-    - Generate from <target_source_code_dir> using `git diff` (include both staged and unstaged changes)
-    - The patch MUST include the code fixes AND all patch-introduced tests (previous iterations + new)
+- Generate the fixed code patch (MUST be fully standalone — applicable on a clean base commit):
+    - Check if the previous patch is already committed (post-rebase case): run `git -C <target_source_code_dir> log --oneline -1` and check if `git -C <target_source_code_dir> diff HEAD` shows the current fixes are uncommitted changes on top of a committed patch.
+    - If the previous patch IS committed (post-rebase — HEAD already has the feature, working tree has fixes on top):
+        - Stage all changes: `git -C <target_source_code_dir> add -A`
+        - Amend the existing commit to include the fixes: `git -C <target_source_code_dir> commit --amend --no-edit`
+        - Generate a FULL standalone patch from base to HEAD: `git -C <target_source_code_dir> diff HEAD~1..HEAD`
+        - This produces a single self-contained patch that includes the original feature + all fixes
+    - If the previous patch is NOT committed (standard case — all changes are in the working tree):
+        - Generate from <target_source_code_dir> using `git diff` (include both staged and unstaged changes)
+    - The patch MUST include ALL code changes AND all patch-introduced tests (all iterations combined)
     - Save to <output_dir>/{output_patch_file}
 - Write a detailed summary to <output_dir>/{output_summary_file}:
     - All errors/issues found in the runtime output with exact error messages
@@ -1229,7 +1247,7 @@ Step 3B: If FAILED
 
 <output>
 On SUCCESS:
-- <output_dir>/{success_result_file}
+- {results_output_dir}/{success_result_file}
 
 On FAILURE:
 - <output_dir>/{output_patch_file}
@@ -1289,6 +1307,8 @@ On FAILURE:
             output_patch_file=self.output_patch_file,
             output_summary_file=self.output_summary_file,
             success_result_file=self.success_result_file,
+            results_output_dir=self.results_output_dir,
+            patch_file=self.prev_patch_file,
             iteration=self.iteration,
         )
 
@@ -1305,6 +1325,7 @@ def gen_InvestigateRuntimeOutputAndFixCodePrompt(
     iteration_history_summary_file: str,
     smaller_model_file: Optional[str] = None,
     lm_eval_result_file: Optional[str] = None,
+    results_output_dir: Optional[str] = None,
 ):
     assert len(code_trace_files) == 2
 
@@ -1323,6 +1344,7 @@ def gen_InvestigateRuntimeOutputAndFixCodePrompt(
         output_patch_file="{}_V{}.patch".format(RUNTIME_FILE_PREFIX, iteration),
         output_summary_file="{}_summary_V{}.txt".format(RUNTIME_FILE_PREFIX, iteration),
         success_result_file=RUNTIME_SUCCESS_FILE,
+        results_output_dir=results_output_dir,
     )
 
 
@@ -2070,4 +2092,558 @@ def gen_SummarizeCodeGenProcessPrompt(
         issue_fix_review_evolution_files=issue_fix_review_evolution_files,
         auto_analyze_project_brief=auto_analyze_project_brief,
         output_file=output_file,
+    )
+
+
+@dataclass
+class CollectBenchmarkResultsPrompt:
+    context: str
+    code_gen_output_dir: str
+    output_file: str
+    prompt_template: ClassVar[str] = """
+
+{context}
+
+<definitions>
+<code_gen_output_dir>
+{code_gen_output_dir}
+</code_gen_output_dir>
+</definitions>
+
+<definition_explanations>
+- <code_gen_output_dir> is the directory containing all pipeline output files, including runtime results and any additional benchmark subdirectories.
+</definition_explanations>
+
+<instructions>
+The goal of this task is to collect all benchmark results (performance and correctness) from the pipeline output into a single structured JSON manifest. Do NOT run any benchmarks yourself. Only read existing result files and produce the manifest.
+
+Follow these steps:
+
+Step 1: Check for existing manifest.
+- Check if <output_dir>/{output_file} already exists. If it does, read it — it is the starting point. You will update it with any new results found.
+
+Step 2: Collect benchmark results from all model runs.
+- Each model run stores its results in a separate subdirectory inside <code_gen_output_dir> matching the pattern runtime_*/ (e.g., runtime_original/, runtime_smaller/, runtime_deepseek_v4_flash_2xh200/).
+- List all runtime_*/ subdirectories in <code_gen_output_dir>.
+- For each subdirectory, read the following files (if they exist):
+    - runtime_success_result.txt — the benchmark success result for this model
+    - runtime_logs/runtime_perf_comparison_V*.txt — performance comparison files (use the highest iteration number)
+    - runtime_logs/lm_eval_result_V*.txt — lm_eval correctness results (use the highest iteration number)
+- Extract from each: model name, gpu_type, num_gpus, batch_size, isl, osl, throughput/TPOT/TTFT for both baseline (feature disabled) and patched (feature enabled), lm_eval scores for both, verdict.
+- The subdirectory name indicates the model (e.g., runtime_original/ is the primary model, runtime_smaller/ is the auto-detected smaller model).
+
+Step 4: Write the manifest.
+- Write <output_dir>/{output_file} as a JSON array where each entry has:
+    {{
+        "label": "<human-readable label, e.g., DeepSeek-V3 (8xH200)>",
+        "model": "<model name>",
+        "gpu_type": "<GPU type>",
+        "num_gpus": <number>,
+        "batch_size": "<batch size>",
+        "isl": "<input sequence length>",
+        "osl": "<output sequence length>",
+        "throughput_baseline": <number or null>,
+        "throughput_patched": <number or null>,
+        "tpot_baseline_ms": <number or null>,
+        "tpot_patched_ms": <number or null>,
+        "ttft_baseline_ms": <number or null>,
+        "ttft_patched_ms": <number or null>,
+        "lm_eval_baseline": {{"metric": <score>}} or null,
+        "lm_eval_patched": {{"metric": <score>}} or null,
+        "lm_eval_verdict": "<PASS/FAIL/null>",
+        "source_dir": "<which directory the results came from>"
+    }}
+- The primary benchmark is the first entry. Additional benchmarks follow in order.
+- If a field cannot be extracted, set it to null.
+- Preserve existing entries in the manifest that are not updated.
+</instructions>
+
+<output>
+- Write the JSON manifest to <output_dir>/{output_file}
+</output>
+
+"""
+
+    def prompt(self):
+        return self.prompt_template.format(
+            context=self.context,
+            code_gen_output_dir=self.code_gen_output_dir,
+            output_file=self.output_file,
+        )
+
+
+def gen_CollectBenchmarkResultsPrompt(
+    context: str,
+    code_gen_output_dir: str,
+):
+    return CollectBenchmarkResultsPrompt(
+        context=context,
+        code_gen_output_dir=code_gen_output_dir,
+        output_file=RUNTIME_RESULTS_MANIFEST,
+    )
+
+
+@dataclass
+class RebasePRPrompt:
+    context: str
+    target_repo_dir: str
+    branch_name: str
+    pr_base_branch: str
+    pr_remote: str
+    code_gen_output_dir: str
+    latest_main_branch: str
+    prompt_template: ClassVar[str] = """
+
+{context}
+
+<definitions>
+<target_repo_dir>
+{target_repo_dir}
+</target_repo_dir>
+<branch_name>
+{branch_name}
+</branch_name>
+<pr_base_branch>
+{pr_base_branch}
+</pr_base_branch>
+<pr_remote>
+{pr_remote}
+</pr_remote>
+<code_gen_output_dir>
+{code_gen_output_dir}
+</code_gen_output_dir>
+<latest_main_branch>
+{latest_main_branch}
+</latest_main_branch>
+</definitions>
+
+<definition_explanations>
+- <target_repo_dir> is the path to the target framework/project repository where the patch has been applied and committed.
+- <branch_name> is the local branch that has the committed patch (from a previous PR gen commit step).
+- <pr_base_branch> is the upstream base branch (e.g., "main").
+- <pr_remote> is the git remote name (e.g., "origin").
+- <code_gen_output_dir> is the output directory where all pipeline artifacts (patches, summaries) are stored.
+- <latest_main_branch> is the local branch name that holds the freshly fetched latest main (created by the previous step).
+</definition_explanations>
+
+<instructions>
+The goal of this task is to rebase the patched branch onto the latest main, resolving all conflicts. Follow these steps carefully:
+
+Step 0: Build full context from pipeline history
+- Before any git operations, read and understand ALL previous pipeline iteration results from <code_gen_output_dir>. This is critical for resolving conflicts correctly.
+- Read in this order:
+    - Code traces (*_code_trace.txt) — understand the code paths the feature touches in both source and target frameworks
+    - Code port plan iterations (code_port_plan_V*.txt, code_port_plan_review_V*.txt) — understand the porting strategy, what was changed and why
+    - Test plan iterations (test_plan_V*.txt, test_plan_review_V*.txt) — understand the test strategy
+    - Code gen iterations (code_gen_V*.patch, code_gen_review_V*.patch) — understand how the code evolved across iterations, what issues were found and fixed
+    - Runtime iteration patches and summaries (code_gen_runtime_V*.patch, code_gen_runtime_summary_V*.txt) — understand runtime fixes applied
+    - All runtime iteration patches and summaries (code_gen_runtime_V*.patch, code_gen_runtime_summary_V*.txt) — understand runtime fixes and any previous rebase iterations (rebases are also stored as runtime iterations)
+    - Iteration history summary (runtime_iterations_history.txt) — overall iteration evolution and key learnings
+- Build a comprehensive understanding of:
+    - What the feature does and every file it modifies
+    - Key design decisions and constraints (e.g., CUDA graph safety, execution mode handling, scheduling)
+    - Issues that were encountered and how they were fixed — avoid re-introducing bugs that were already fixed
+    - Which code changes are load-bearing (must be preserved exactly) vs which are adaptable to new APIs
+- This context is essential for Step 4 (conflict resolution) — without it, conflicts cannot be resolved correctly.
+
+Step 1: Verify state
+- cd into <target_repo_dir>
+- Verify the current branch is <branch_name>: `git branch --show-current`
+- Verify the working tree is clean: `git status --porcelain` should show no changes
+- If not clean, abort with an error message
+
+Step 2: Create backup branch
+- Create a backup of the current branch before rebasing:
+    `git branch <branch_name>__store_before_rebase_$(date +%Y%m%d_%H%M%S)`
+- Print the backup branch name so the user knows where the pre-rebase state is stored
+
+Step 3: Rebase onto latest main
+- Run: `git rebase <latest_main_branch>`
+- If the rebase completes with no conflicts, proceed to Step 5
+
+Step 4: Resolve conflicts (if any)
+- If the rebase reports conflicts:
+    - Use the full context from Step 0 to guide resolution — you must understand what the feature does, why each code change exists, and what issues were previously fixed
+    - For each conflicted file, read the conflict markers and understand both sides
+    - The "ours" side is the patch we want to keep (the feature implementation)
+    - The "theirs" side is the latest main changes
+    - Resolve each conflict by:
+        - Keeping the feature implementation logic from "ours"
+        - Adapting it to work with any API changes, renames, or refactors from "theirs"
+        - Cross-reference with the code port plan and runtime fix summaries to ensure you do NOT re-introduce bugs that were already fixed in previous iterations
+        - If a function signature changed in main, update the feature code to use the new signature while preserving the feature's behavior
+        - If a file was deleted in main but modified in the patch, check if the functionality moved elsewhere and adapt
+        - If main added new code paths (e.g., new execution modes, new model architectures), ensure the feature handles them correctly based on the code trace analysis from Step 0
+    - After resolving each file: `git add <file>`
+    - Continue the rebase: `git rebase --continue`
+    - Repeat until all conflicts are resolved
+- If a conflict is too complex to resolve automatically, document it clearly and abort the rebase with `git rebase --abort`, then restore from the backup branch
+
+Step 5: Verify the rebase
+- Confirm the rebase completed: `git log --oneline -5` should show the patch commit on top of the latest main commits
+- Run a quick compilation check using the build process to ensure the rebased code compiles
+- If compilation fails, investigate and fix the issues (they may be caused by API changes in the latest main)
+
+Step 6: Save the rebased patch
+- Generate a new patch file from the rebased commit:
+    `git diff <latest_main_branch>..HEAD > <code_gen_output_dir>/{rebase_patch_file}`
+- Generate a summary file at <code_gen_output_dir>/{rebase_summary_file} that includes:
+    - The base commit (HEAD of <latest_main_branch>) that this patch applies on top of
+    - The base commit hash: `git rev-parse <latest_main_branch>`
+    - What conflicts were encountered and how they were resolved (if any)
+    - Whether compilation succeeded after rebase
+    - The backup branch name for reference
+    - A note that this is a rebase iteration — the patch is the same feature rebased onto a newer base commit, superseding all previous patches
+
+Step 7: Verify the patch can be re-applied
+- To confirm the patch is self-contained, verify it could be applied to a clean checkout of <latest_main_branch>:
+    - `git stash` (if any unstaged changes)
+    - `git checkout <latest_main_branch>`
+    - `git apply --check <code_gen_output_dir>/{rebase_patch_file}`
+    - `git checkout <branch_name>` (go back)
+    - `git stash pop` (if stashed)
+- If the check fails, the patch file is incomplete — regenerate it
+</instructions>
+
+<output>
+- The rebased branch <branch_name> with the patch on top of latest main
+- <code_gen_output_dir>/{rebase_patch_file} — the rebased patch
+- <code_gen_output_dir>/{rebase_summary_file} — summary with base commit, conflicts, and verification
+</output>
+
+"""
+
+    def prompt(self):
+        import re
+        import os
+        max_ver = 0
+        if os.path.isdir(self.code_gen_output_dir):
+            pat = re.compile(r'^code_gen_runtime_V(\d+)\.patch$')
+            for f in os.listdir(self.code_gen_output_dir):
+                m = pat.match(f)
+                if m:
+                    ver = int(m.group(1))
+                    if ver > max_ver:
+                        max_ver = ver
+        next_ver = max_ver + 1
+        rebase_patch_file = "{}_V{}.patch".format(RUNTIME_FILE_PREFIX, next_ver)
+        rebase_summary_file = "{}_summary_V{}.txt".format(RUNTIME_FILE_PREFIX, next_ver)
+
+        return self.prompt_template.format(
+            context=self.context,
+            target_repo_dir=self.target_repo_dir,
+            branch_name=self.branch_name,
+            pr_base_branch=self.pr_base_branch,
+            pr_remote=self.pr_remote,
+            code_gen_output_dir=self.code_gen_output_dir,
+            latest_main_branch=self.latest_main_branch,
+            rebase_patch_file=rebase_patch_file,
+            rebase_summary_file=rebase_summary_file,
+        )
+
+
+def gen_RebasePRPrompt(
+    context: str,
+    target_repo_dir: str,
+    branch_name: str,
+    pr_base_branch: str,
+    pr_remote: str,
+    code_gen_output_dir: str,
+    latest_main_branch: str,
+):
+    return RebasePRPrompt(
+        context=context,
+        target_repo_dir=target_repo_dir,
+        branch_name=branch_name,
+        pr_base_branch=pr_base_branch,
+        pr_remote=pr_remote,
+        code_gen_output_dir=code_gen_output_dir,
+        latest_main_branch=latest_main_branch,
+    )
+
+
+PR_COMMIT_DESC_FILE = "commit_desc.txt"
+PR_PR_DESC_FILE = "pr_desc.txt"
+PR_METADATA_FILE = "pr_gen_metadata.txt"
+
+
+@dataclass
+class UpdateCommitAndPRDescsPrompt:
+    context: str
+    code_gen_output_dir: str
+    output_dir_pr: str
+    prompt_template: ClassVar[str] = """
+
+{context}
+
+<definitions>
+<code_gen_output_dir>
+{code_gen_output_dir}
+</code_gen_output_dir>
+<output_dir_pr>
+{output_dir_pr}
+</output_dir_pr>
+</definitions>
+
+<definition_explanations>
+- <code_gen_output_dir> is the directory containing all pipeline output files (code traces, plans, patches, runtime results).
+- <output_dir_pr> is the directory where the PR description files will be written.
+</definition_explanations>
+
+<instructions>
+The goal of this task is to read all pipeline results and generate up-to-date commit and PR descriptions. Do NOT run any git or gh commands yourself. Only generate the two description files.
+
+Follow these steps and think hard:
+
+Step 0: Check for existing descriptions.
+- Check if <output_dir_pr>/commit_desc.txt and <output_dir_pr>/pr_desc.txt already exist from a previous run.
+- If they exist, read them first — they are the starting point. Your job is to UPDATE them with any new information from the latest pipeline results (new runtime iterations, fixes, updated performance numbers, etc.). Preserve the existing structure and wording where it is still accurate, and only modify sections that are outdated or incomplete.
+- If they do not exist, generate them from scratch.
+
+Step 1: Read and analyze all result files in <code_gen_output_dir>:
+- Shared pipeline artifacts (in <code_gen_output_dir> root):
+    - code_port_plan_review_V*.txt or code_port_plan_V*.txt — the final code port plan (use the highest iteration number)
+    - runtime_iterations_history.txt — iteration history summary
+    - code_gen_review_summary_V*.txt or code_gen_summary_V*.txt — code gen summary
+    - Any runtime fix summaries (code_gen_runtime_summary_V*.txt) — to capture the latest fixes
+- Per-model runtime results (each model run has its own subdirectory inside <code_gen_output_dir> matching runtime_*/, e.g., runtime_original/, runtime_smaller/):
+    - runtime_*/runtime_success_result.txt — performance results and success confirmation for that model
+    - runtime_*/runtime_logs/runtime_perf_comparison_V*.txt — performance comparison (enabled vs disabled baseline)
+    - runtime_*/runtime_logs/lm_eval_result_V*.txt — correctness verification results
+- runtime_results_manifest.json — if this file exists in <code_gen_output_dir>, it contains structured benchmark results from all model configurations. Use this as the authoritative source for performance and correctness numbers.
+
+Step 2: Extract key information:
+- What the patch does (from the code port plan) — summarize in 2-3 sentences
+- Performance results: if runtime_results_manifest.json exists, extract results for ALL model configurations listed in it. Otherwise, read the per-model runtime_*/runtime_success_result.txt files directly.
+- Correctness results: lm_eval scores for all model configurations (if available)
+- Feature toggle: the environment variable name and startup log messages
+- Test coverage: summary of what tests are included in the patch
+
+Step 3: Create the directory <output_dir_pr> (if it doesn't exist) and generate:
+
+File: <output_dir_pr>/commit_desc.txt
+- First line: concise commit title (type: short description, e.g., "perf: replace attention kernel with fused MLA")
+- Empty line
+- Body: explaining what was changed and why, mentioning the performance improvement
+- This file is the complete commit message, ready to be used with `git commit -F`
+- IMPORTANT: Do NOT include any Co-Authored-By, Signed-off-by, or other trailers. Do NOT mention AI, Claude, auto_code_gen, or any tool attribution. The commit message must read as if written by a human engineer.
+
+File: <output_dir_pr>/pr_desc.txt
+- A well-structured PR description in markdown that includes:
+    * "## Summary" — what was changed and why (2-3 paragraphs)
+    * "## Performance Results" — a markdown table with throughput/TPOT/TTFT for baseline vs patched with delta %. If multiple model configurations are available (from runtime_results_manifest.json), include one row per model configuration with a label column.
+    * "## Correctness (lm_eval)" — a markdown table with scores if available, or "Not run" if not. If multiple model configurations, include one row per model.
+    * "## Feature Toggle" — the env var name and startup log messages
+    * "## Test Coverage" — summary of tests
+- This file is the complete PR body, ready to be used with `gh pr create --body-file`
+- IMPORTANT: Do NOT mention AI, Claude, auto_code_gen, or any tool attribution anywhere in the PR description.
+</instructions>
+
+<output>
+- Write <output_dir_pr>/commit_desc.txt and <output_dir_pr>/pr_desc.txt
+</output>
+
+"""
+
+    def prompt(self):
+        return self.prompt_template.format(
+            context=self.context,
+            code_gen_output_dir=self.code_gen_output_dir,
+            output_dir_pr=self.output_dir_pr,
+        )
+
+
+def gen_UpdateCommitAndPRDescsPrompt(
+    context: str,
+    code_gen_output_dir: str,
+):
+    import os
+    output_dir_pr = os.path.join(code_gen_output_dir, PR_COMMANDS_DIR)
+    return UpdateCommitAndPRDescsPrompt(
+        context=context,
+        code_gen_output_dir=code_gen_output_dir,
+        output_dir_pr=output_dir_pr,
+    )
+
+
+@dataclass
+class GeneratePRCommandsPrompt:
+    context: str
+    code_gen_output_dir: str
+    target_repo_dir: str
+    branch_name: str
+    pr_base_branch: str
+    pr_remote: str
+    output_dir_pr: str
+    config_path: str
+    prompt_template: ClassVar[str] = """
+
+{context}
+
+<definitions>
+<code_gen_output_dir>
+{code_gen_output_dir}
+</code_gen_output_dir>
+<target_repo_dir>
+{target_repo_dir}
+</target_repo_dir>
+<branch_name>
+{branch_name}
+</branch_name>
+<pr_base_branch>
+{pr_base_branch}
+</pr_base_branch>
+<pr_remote>
+{pr_remote}
+</pr_remote>
+<output_dir_pr>
+{output_dir_pr}
+</output_dir_pr>
+<config_path>
+{config_path}
+</config_path>
+</definitions>
+
+<definition_explanations>
+- <code_gen_output_dir> is the directory containing all pipeline output files (code traces, plans, patches, runtime results).
+- <target_repo_dir> is the path to the target framework/project repository where the patch has been applied.
+- <branch_name> is the git branch name in <target_repo_dir> that contains the patch.
+- <pr_base_branch> is the upstream branch to create the PR against (e.g., "main").
+- <pr_remote> is the git remote name to push to (e.g., "origin").
+- <output_dir_pr> is the directory where all PR step scripts and description files live. It already contains commit_desc.txt and pr_desc.txt.
+- <config_path> is the absolute path to the JSON config file used for this pipeline run.
+</definition_explanations>
+
+<instructions>
+The goal of this task is to generate individual shell scripts for each step of the PR creation and update process. Do NOT run any git or gh commands yourself. Only generate the script files.
+
+The description files <output_dir_pr>/commit_desc.txt and <output_dir_pr>/pr_desc.txt already exist (generated by a previous step). The scripts below must reference them.
+
+Follow these steps and think hard:
+
+Step 1: Read <output_dir_pr>/commit_desc.txt to get the commit title (first line) — this is also used as the PR title.
+
+Step 2: Choose a readable remote branch name.
+- Based on the commit title, choose a short, human-readable branch name for the remote.
+- Format: `perf/<short-kebab-description>` (e.g., `perf/fused-mla-attention`, `perf/kv-cache-paged-copy`).
+- Use lowercase, hyphens between words, max 4-5 words after the prefix.
+- This readable name is used ONLY for the remote branch and the PR. The local branch stays as <branch_name>.
+
+Step 3: Identify the latest code patch file.
+- Look for the latest patch in <code_gen_output_dir>: check for code_gen_runtime_V*.patch files first (highest N), then code_gen_review_V*.patch, then code_gen_V*.patch.
+- This is the patch that produced the successful runtime result.
+
+Step 4: Generate the following script files inside <output_dir_pr>. Each file must be a valid, self-contained bash script (with #!/bin/bash header) that can be run independently. Each file must have a header comment block documenting what it does, what the expected outcome is, and any prerequisites.
+
+File: <output_dir_pr>/pr_gen_step_0_generate_descs.sh
+- Runs the UpdateCommitAndPRDescs prompt to regenerate commit_desc.txt and pr_desc.txt with the latest results.
+- The script must first cd into the repo root directory that contains auto_code_gen/ (derive it from <config_path>: it is the grandparent directory of the configs/ directory that <config_path> is in, i.e. two levels up from <config_path>).
+- Then execute: `python -m auto_code_gen.run_generate_pr_commands --config {config_path} --descs-only`
+- Use the exact path from <config_path>.
+
+File: <output_dir_pr>/pr_gen_step_1_apply_patch.sh
+- cd into <target_repo_dir>
+- First, check if the latest patch is already applied by running `git diff --stat` and comparing against the patch content. If the working tree already has the changes (non-empty diff matching the patch), skip application and print a message that the patch is already applied.
+- If not applied:
+    - Reset the repo to a clean state: `git checkout -- .` and `git clean -fd`
+    - Apply the latest patch file identified in Step 3: `git apply <code_gen_output_dir>/<latest_patch_file>`
+    - If `git apply` fails, try `git apply --3way <code_gen_output_dir>/<latest_patch_file>`
+- After applying, print the `git diff --stat` output to show what changed
+- The script must contain the absolute path to the patch file
+
+File: <output_dir_pr>/pr_gen_step_2_commit.sh
+- cd into <target_repo_dir>
+- `git add -A`
+- `git commit -F <output_dir_pr>/commit_desc.txt`
+- Use the absolute path to commit_desc.txt
+
+File: <output_dir_pr>/pr_gen_step_3_signoff.sh
+- cd into <target_repo_dir>
+- Run `git rebase HEAD~1 --signoff` to add the Signed-off-by trailer to the last commit
+
+File: <output_dir_pr>/pr_gen_step_4_push.sh
+- cd into <target_repo_dir>
+- Push the local branch to the remote under the readable branch name chosen in Step 2, with tracking:
+    `git push -u <pr_remote> <branch_name>:<readable_remote_branch_name>`
+- After the push, echo the remote branch name so the user can see it
+- Write a metadata file <output_dir_pr>/pr_gen_metadata.txt with:
+    local_branch: <branch_name>
+    remote_branch: <readable_remote_branch_name>
+    remote: <pr_remote>
+    pr_base: <pr_base_branch>
+
+File: <output_dir_pr>/pr_gen_step_5_create_pr.sh
+- Read the PR title from the first line of <output_dir_pr>/commit_desc.txt
+- `gh pr create` command with:
+    - --repo flag pointing to the <pr_remote> repo (use `git -C <target_repo_dir> remote get-url <pr_remote>` to resolve it)
+    - --base <pr_base_branch>
+    - --head <readable_remote_branch_name> (the readable name from Step 2, NOT <branch_name>)
+    - --title: read from first line of commit_desc.txt (use `head -1 <output_dir_pr>/commit_desc.txt`)
+    - --body-file <output_dir_pr>/pr_desc.txt
+
+File: <output_dir_pr>/pr_gen_step_6_update_pr.sh
+- This script is for updating an existing PR after additional fixes/iterations.
+- cd into <target_repo_dir>
+- Amend the last commit with updated changes: `git add -A && git commit --amend -F <output_dir_pr>/commit_desc.txt`
+- Add signoff: `git rebase HEAD~1 --signoff`
+- Force-push to update the remote branch: `git push --force-with-lease <pr_remote> <branch_name>:<readable_remote_branch_name>`
+- Update the PR description: read the readable_remote_branch_name from <output_dir_pr>/pr_gen_metadata.txt, then run:
+    `gh pr edit <readable_remote_branch_name> --repo <repo_url> --title "$(head -1 <output_dir_pr>/commit_desc.txt)" --body-file <output_dir_pr>/pr_desc.txt`
+- Print a message confirming the PR was updated
+
+File: <output_dir_pr>/pr_gen_step_7_get_latest_main.sh
+- cd into <target_repo_dir>
+- Fetch the latest from <pr_remote>: `git fetch <pr_remote> <pr_base_branch>`
+- Create a local branch from the fetched main with a timestamped name:
+    `git branch latest_main_$(date +%Y%m%d_%H%M%S) <pr_remote>/<pr_base_branch>`
+- Print the created branch name
+- Save the branch name to <output_dir_pr>/latest_main_branch.txt so the next step can read it
+
+File: <output_dir_pr>/pr_gen_step_8_rebase.sh
+- This script runs the RebasePR prompt to rebase the patched branch onto the latest main.
+- The script must first cd into the repo root directory that contains auto_code_gen/ (derive from <config_path>).
+- Read the latest main branch name from <output_dir_pr>/latest_main_branch.txt
+- Run: `python -m auto_code_gen.run_rebase_pr --config {config_path} --latest-main-branch "$(cat <output_dir_pr>/latest_main_branch.txt)"`
+- Print the result: whether rebase succeeded and where the rebased patch is saved
+</instructions>
+
+<output>
+- Write the nine script files inside <output_dir_pr>.
+</output>
+
+"""
+
+    def prompt(self):
+        return self.prompt_template.format(
+            context=self.context,
+            code_gen_output_dir=self.code_gen_output_dir,
+            target_repo_dir=self.target_repo_dir,
+            branch_name=self.branch_name,
+            pr_base_branch=self.pr_base_branch,
+            pr_remote=self.pr_remote,
+            output_dir_pr=self.output_dir_pr,
+            config_path=self.config_path,
+        )
+
+
+def gen_GeneratePRCommandsPrompt(
+    context: str,
+    code_gen_output_dir: str,
+    target_repo_dir: str,
+    branch_name: str,
+    pr_base_branch: str,
+    config_path: str,
+    pr_remote: str = "origin",
+):
+    import os
+    output_dir_pr = os.path.join(code_gen_output_dir, PR_COMMANDS_DIR)
+    return GeneratePRCommandsPrompt(
+        context=context,
+        code_gen_output_dir=code_gen_output_dir,
+        target_repo_dir=target_repo_dir,
+        branch_name=branch_name,
+        pr_base_branch=pr_base_branch,
+        pr_remote=pr_remote,
+        output_dir_pr=output_dir_pr,
+        config_path=os.path.abspath(config_path),
     )

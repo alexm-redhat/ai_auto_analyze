@@ -1,4 +1,5 @@
 import os
+import re
 
 from auto_code_gen.use_cases.base import UseCase
 from common.claude_utils import PipelineStep, claude_run
@@ -343,10 +344,12 @@ The goal of this task is to generate a code patch for the "target" framework tha
 Feature Toggle and Startup Verification:
 - The generated code MUST include the following two mechanisms:
     1. STARTUP LOG: Add a log message that prints during "target" framework startup (e.g., during model initialization or engine startup) when the new feature is active. The message must follow the format:
-       `[AutoPerf] Plan step <plan_step>: <short_description_of_feature> is ENABLED`
+       `<short_description_of_feature> is ENABLED`
        This log must appear in stdout/stderr so it can be detected in runtime logs.
-    2. ENVIRONMENT VARIABLE DISABLE SWITCH: Add an environment variable named `VLLM_DISABLE_AUTO_PERF_PLAN_<plan_step>` (e.g., `VLLM_DISABLE_AUTO_PERF_PLAN_2`) that, when set to "1", disables the new feature entirely and falls back to the original code paths. When disabled, print:
-       `[AutoPerf] Plan step <plan_step>: <short_description_of_feature> is DISABLED (env override)`
+    2. ENVIRONMENT VARIABLE DISABLE SWITCH: Add an environment variable that, when set to "1", disables the new feature entirely and falls back to the original code paths. When disabled, print:
+       `<short_description_of_feature> is DISABLED (env override)`
+    - The env var name MUST be descriptive of the feature itself (e.g., `VLLM_DISABLE_PUSH_ALLREDUCE`, `VLLM_DISABLE_FUSED_MLA_ATTENTION`). It must NOT contain generic identifiers like "PLAN", "STEP", "AUTO_PERF", or numerical IDs.
+    - Before choosing the name, search the codebase to make sure no existing environment variable with the same name already exists.
     - The env var check must happen early in the relevant code path (e.g., during model/layer initialization).
     - When the env var is NOT set or set to anything other than "1", the new feature runs by default.
 </instructions>
@@ -356,7 +359,7 @@ Feature Toggle and Startup Verification:
 - Dump a summary to <output_dir>/{output_summary_file} that includes:
     - An explanation of the code patch and tests generated in this iteration
     - A summary of the iteration evolution across all iterations up to and including iteration {iteration}, describing the progression of fixes and improvements
-    - The exact environment variable name used to disable the new feature (e.g., VLLM_DISABLE_AUTO_PERF_PLAN_2)
+    - The exact environment variable name used to disable the new feature
     - The exact startup log message that confirms the feature is enabled
     - The exact startup log message that confirms the feature is disabled
 </output>
@@ -448,20 +451,51 @@ class LLMFrameworkUseCase(UseCase):
             "fn_name": 'clear_vllm_source_tree("{}")'.format(config.source_code_dir),
         }
 
+    @staticmethod
+    def _derive_run_command(primary_command, model, num_gpus):
+        cmd = primary_command
+        tp_pat = re.compile(r'(--tensor-parallel-size\s+)\d+')
+        if tp_pat.search(cmd):
+            cmd = tp_pat.sub(r'\g<1>{}'.format(num_gpus), cmd)
+        else:
+            tp_pat2 = re.compile(r'(--tp\s+)\d+')
+            if tp_pat2.search(cmd):
+                cmd = tp_pat2.sub(r'\g<1>{}'.format(num_gpus), cmd)
+        model_pat = re.compile(r'(--model\s+)\S+')
+        if model_pat.search(cmd):
+            cmd = model_pat.sub(r'\g<1>{}'.format(model), cmd)
+        else:
+            model_path_pat = re.compile(r'(--model-path\s+)\S+')
+            if model_path_pat.search(cmd):
+                cmd = model_path_pat.sub(r'\g<1>{}'.format(model), cmd)
+        return cmd
+
+    @staticmethod
+    def _make_model_slug(model_name):
+        return re.sub(r'[^a-z0-9]+', '_', model_name.lower()).strip('_')
+
     async def run_runtime_iterations(
         self, context, config, claude_config, code_trace_files,
         code_port_plan_file, test_plan_file, resume=False,
+        run_models=None,
     ):
         from auto_code_gen.code_gen_prompts import (
             gen_IterationHistorySummaryPrompt,
             gen_FindSmallerModelPrompt,
+            gen_CollectBenchmarkResultsPrompt,
             RUNTIME_SMALLER_MODEL_FILE,
+            RUNTIME_RESULTS_MANIFEST,
         )
-        from auto_code_gen.run_code_gen import run_runtime_iterations as _run_runtime_iters
+        from auto_code_gen.run_code_gen import (
+            run_runtime_iterations as _run_runtime_iters,
+            _make_model_runtime_dir,
+        )
 
         output_dir = config.output_dir
+        all_phase_results = []
         all_step_timings = []
 
+        # Generate iteration history summary
         print("Generating iteration history summary before runtime iterations...")
         history_prompt = gen_IterationHistorySummaryPrompt(
             context=context,
@@ -477,42 +511,121 @@ class LLMFrameworkUseCase(UseCase):
         timings = await claude_run(claude_config, steps_history)
         all_step_timings.extend(timings)
 
-        smaller_model_file = None
-        if config.use_smaller_model_for_runtime:
-            smaller_model_path = os.path.join(output_dir, RUNTIME_SMALLER_MODEL_FILE)
-            if os.path.isfile(smaller_model_path) and os.path.getsize(smaller_model_path) > 0:
-                print("Reusing existing smaller model selection ({})".format(
-                    RUNTIME_SMALLER_MODEL_FILE
-                ))
-                smaller_model_file = RUNTIME_SMALLER_MODEL_FILE
-            else:
-                print("Finding smaller model for runtime iterations...")
-                smaller_prompt = gen_FindSmallerModelPrompt(
-                    context=context,
-                    code_trace_files=code_trace_files,
-                    code_port_plan_file=code_port_plan_file,
-                )
-                steps_smaller = [
-                    PipelineStep(
-                        name="find_smaller_model",
-                        prompt=smaller_prompt.prompt(),
-                        output_files=[smaller_prompt.output_file],
-                    ),
-                ]
-                timings = await claude_run(claude_config, steps_smaller)
-                all_step_timings.extend(timings)
-                smaller_model_file = smaller_prompt.output_file
+        # Build list of models to run
+        models_to_run = []
+        if run_models is not None:
+            models_to_run = run_models
+        else:
+            # Default: original model
+            models_to_run.append({
+                "model": config.model,
+                "num_gpus": None,
+                "label": "original",
+                "execution_command": config.target_run_command,
+                "smaller_model_file": None,
+                "disable_new_feature": config.disable_new_feature_for_runtime,
+            })
 
-        runtime_phase_results, runtime_timings = await _run_runtime_iters(
-            context, code_trace_files, config, claude_config,
-            code_port_plan_file, test_plan_file,
-            history_prompt.output_file, resume=resume,
-            smaller_model_file=smaller_model_file,
-            disable_new_feature=config.disable_new_feature_for_runtime,
-        )
-        all_step_timings.extend(runtime_timings)
+            # Smaller model (if enabled)
+            if config.use_smaller_model_for_runtime:
+                smaller_model_file = None
+                smaller_model_path = os.path.join(output_dir, RUNTIME_SMALLER_MODEL_FILE)
+                if os.path.isfile(smaller_model_path) and os.path.getsize(smaller_model_path) > 0:
+                    print("Reusing existing smaller model selection ({})".format(
+                        RUNTIME_SMALLER_MODEL_FILE
+                    ))
+                    smaller_model_file = RUNTIME_SMALLER_MODEL_FILE
+                else:
+                    print("Finding smaller model for runtime iterations...")
+                    smaller_prompt = gen_FindSmallerModelPrompt(
+                        context=context,
+                        code_trace_files=code_trace_files,
+                        code_port_plan_file=code_port_plan_file,
+                    )
+                    steps_smaller = [
+                        PipelineStep(
+                            name="find_smaller_model",
+                            prompt=smaller_prompt.prompt(),
+                            output_files=[smaller_prompt.output_file],
+                        ),
+                    ]
+                    timings = await claude_run(claude_config, steps_smaller)
+                    all_step_timings.extend(timings)
+                    smaller_model_file = smaller_prompt.output_file
 
-        return runtime_phase_results, all_step_timings
+                models_to_run.append({
+                    "model": "smaller",
+                    "num_gpus": None,
+                    "label": "smaller",
+                    "execution_command": config.target_run_command,
+                    "smaller_model_file": smaller_model_file,
+                    "disable_new_feature": config.disable_new_feature_for_runtime,
+                })
+
+            # Additional benchmark models
+            for bench_cfg in config.additional_benchmark_configs:
+                model = bench_cfg.get("model", "")
+                num_gpus = bench_cfg.get("num_gpus", 8)
+                label = bench_cfg.get("label", model)
+                exec_cmd = bench_cfg.get("run_command", "")
+                if not exec_cmd:
+                    exec_cmd = self._derive_run_command(
+                        config.target_run_command, model, num_gpus
+                    )
+                models_to_run.append({
+                    "model": model,
+                    "num_gpus": num_gpus,
+                    "label": label,
+                    "execution_command": exec_cmd,
+                    "smaller_model_file": None,
+                    "disable_new_feature": config.disable_new_feature_for_runtime,
+                })
+
+        # Run runtime iterations for each model
+        for model_cfg in models_to_run:
+            label = model_cfg["label"]
+            slug = self._make_model_slug(label)
+            model_dir = _make_model_runtime_dir(output_dir, label)
+            os.makedirs(model_dir, exist_ok=True)
+
+            phase_label = "Runtime ({})".format(label)
+            print("\n" + "=" * 80)
+            print("RUNTIME MODEL: {}".format(label))
+            print("  Results dir: {}".format(model_dir))
+            print("  Command: {}".format(model_cfg["execution_command"]))
+            print("=" * 80)
+
+            phase_results, runtime_timings = await _run_runtime_iters(
+                context, code_trace_files, config, claude_config,
+                code_port_plan_file, test_plan_file,
+                history_prompt.output_file, resume=resume,
+                smaller_model_file=model_cfg.get("smaller_model_file"),
+                disable_new_feature=model_cfg.get("disable_new_feature", False),
+                model_runtime_dir=model_dir,
+                execution_command=model_cfg["execution_command"],
+                phase_label=phase_label,
+            )
+            all_phase_results.extend(phase_results)
+            all_step_timings.extend(runtime_timings)
+
+        # Collect all benchmark results into manifest
+        if len(models_to_run) > 0:
+            print("\nCollecting benchmark results into manifest...")
+            collect_prompt = gen_CollectBenchmarkResultsPrompt(
+                context=context,
+                code_gen_output_dir=output_dir,
+            )
+            steps_collect = [
+                PipelineStep(
+                    name="collect_benchmark_results",
+                    prompt=collect_prompt.prompt(),
+                    output_files=[RUNTIME_RESULTS_MANIFEST],
+                ),
+            ]
+            timings = await claude_run(claude_config, steps_collect)
+            all_step_timings.extend(timings)
+
+        return all_phase_results, all_step_timings
 
     # -- Phase 1: code traces ------------------------------------------------
 
@@ -714,3 +827,57 @@ class LLMFrameworkUseCase(UseCase):
         ]
 
         return steps, code_review_prompt
+
+    # -- Phase 6: generate PR commands -----------------------------------------
+
+    async def run_generate_pr_commands(self, context, config, claude_config,
+                                       descs_only=False):
+        import time
+        from auto_code_gen.code_gen_prompts import (
+            gen_UpdateCommitAndPRDescsPrompt,
+            gen_GeneratePRCommandsPrompt,
+        )
+
+        phase_start = time.time()
+        all_timings = []
+
+        descs_prompt = gen_UpdateCommitAndPRDescsPrompt(
+            context=context,
+            code_gen_output_dir=config.output_dir,
+        )
+        steps_descs = [
+            PipelineStep(
+                name="update_commit_and_pr_descs",
+                prompt=descs_prompt.prompt(),
+            ),
+        ]
+        timings = await claude_run(claude_config, steps_descs)
+        all_timings.extend(timings)
+
+        if not descs_only:
+            commands_prompt = gen_GeneratePRCommandsPrompt(
+                context=context,
+                code_gen_output_dir=config.output_dir,
+                target_repo_dir=config.source_code_dir,
+                branch_name=config.get_target_branch_name(),
+                pr_base_branch=config.pr_base_branch,
+                config_path=config.config_json_path,
+                pr_remote=config.pr_remote,
+            )
+            steps_commands = [
+                PipelineStep(
+                    name="generate_pr_commands",
+                    prompt=commands_prompt.prompt(),
+                ),
+            ]
+            timings = await claude_run(claude_config, steps_commands)
+            all_timings.extend(timings)
+
+        phase_results = [{
+            "name": "Generate PR commands",
+            "iterations": 1,
+            "max_iterations": 1,
+            "converged": False,
+            "duration": time.time() - phase_start,
+        }]
+        return phase_results, all_timings
